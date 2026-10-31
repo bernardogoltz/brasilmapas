@@ -20,7 +20,8 @@ Tudo passa pelo `make` (requer Docker e `uv`). `make` sozinho lista os comandos.
 | `make transformar` | dispara `dbt_geo` (Cosmos) no Airflow; também roda sozinha quando a ingestão atualiza um asset |
 | `make tiles` | sobe o Martin com municípios e UFs como vector tiles (`localhost:3001`) |
 | `make validar` | valida UFs e municípios com o `geoibge`; `IDS="SP 3550308"` |
-| `make mapas` | regera `src/geoibge/mapas/{cd_uf}.json` (GeoJSON por UF, simplificado na escala da UF) a partir dos marts |
+| `make mapas` | regera `src/geoibge/mapas/{cd_uf}.json` (GeoJSON por UF, simplificado na escala da UF) a partir dos marts, e o `data/mapas.json` |
+| `make mapas-json` | regera `data/mapas.json` (paths SVG prontos de todas as UFs, para uso externo) a partir dos GeoJSON, sem banco |
 | `make mapa` | SVG da UF com o município em destaque, sem banco: `COD=3550308` ou `CEP=01310-100`; grava em `data/mapas/` |
 | `make explorador` | app `05_explorador.py`: UF → mapa, clique → `reverse()` |
 | `make simplificacao` | abre `02_simplificacao.py` (tolerância × tamanho × frestas) |
@@ -366,6 +367,37 @@ s  = gi.svg("355030", largura=800)   # SVG pronto; código de 6 dígitos também
 
 `make mapas` regera os arquivos depois de uma edição nova; `make mapa COD=3550308` (ou `CEP=…`) grava o SVG em `data/mapas/`. No GeoPandas: `gpd.GeoDataFrame.from_features(fc["features"], crs=4674)`.
 
+#### `data/mapas.json`: os mesmos mapas sem Python
+
+Arquivo único e versionado (~4,8 MB, ~1,7 MB com gzip) com tudo que o `svg()` usa, já projetado: qualquer linguagem monta o desenho só concatenando strings. Regerado por `make mapas-json`; um teste confere que está em dia e que segui-lo reproduz o `svg()` byte a byte.
+
+| Chave | Conteúdo |
+|---|---|
+| `formato`, `edicao`, `fonte`, `projecao` | versão do formato (`geoibge-mapas/1`), edição da malha, origem e projeção |
+| `lado_px`, `raio_marcador`, `cores` | escala do desenho (lado maior da UF), raio do círculo de destaque, paleta |
+| `receita` | passo a passo para montar o SVG |
+| `ufs.{cd_uf}` | `sigla`, `nome`, `largura`, `altura`, `contorno` (`d` do SVG) e `municipios` |
+| `ufs.{cd_uf}.municipios.{cd_mun}` | `nome`, `nivel` (`municipio` ou `area_operacional`), `caixa` `[x0, y0, x1, y1]` e `d` |
+
+```js
+const cat = await (await fetch("mapas.json")).json();
+function svg(cod) {
+  const uf = cat.ufs[cod.slice(0, 2)], mun = uf.municipios[cod], c = cat.cores, m = cat.raio_marcador + 4;
+  const ds = (n) => Object.values(uf.municipios).filter((x) => x.nivel === n).map((x) => x.d).join("");
+  const [x0, y0, x1, y1] = mun.caixa, s = 'fill-rule="evenodd" vector-effect="non-scaling-stroke"';
+  return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="${-m} ${-m} ${uf.largura + 2 * m} ${uf.altura + 2 * m}">
+    <path d="${ds("municipio")}" fill="${c.fundo}" stroke="${c.borda}" stroke-width="0.5" ${s}/>
+    <path d="${ds("area_operacional")}" fill="${c.agua}" ${s}/>
+    <path d="${mun.d}" fill="${c.destaque}" stroke="${c.destaque}" stroke-width="0.5" ${s}/>
+    <path d="${uf.contorno}" fill="none" stroke="${c.uf}" stroke-width="1.2" ${s}/>
+    ${Math.max(x1 - x0, y1 - y0) < cat.raio_marcador ? `<circle cx="${(x0 + x1) / 2}" cy="${(y0 + y1) / 2}"
+      r="${cat.raio_marcador}" fill="none" stroke="${c.destaque}" stroke-width="2" ${s}/>` : ""}</svg>`;
+}
+document.body.innerHTML = svg("3550308");
+```
+
+Para geometria em lon/lat (GIS, Leaflet), use os GeoJSON de `src/geoibge/mapas/`.
+
 Resultado de `reverse()` para um ponto (colunas do DataFrame, mostradas como dict):
 
 ```json
@@ -513,6 +545,7 @@ geo/
 │   └── models/{staging,intermediate,marts}/
 ├── src/geoibge/                  # biblioteca e CLI
 │   └── mapas/                    # GeoJSON por UF para o desenho (make mapas)
+├── data/mapas.json               # paths SVG prontos por UF, para uso externo (make mapas-json); resto de data/ fora do git
 ├── tests/
 ├── tiles/martin.yaml
 ├── notebooks/

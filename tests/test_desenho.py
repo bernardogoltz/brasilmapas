@@ -1,5 +1,6 @@
 """geoibge.desenho: UF com município em destaque a partir dos GeoJSON publicados (sem banco, sem rede)."""
 
+import html
 import io
 import json
 import subprocess
@@ -177,3 +178,68 @@ def test_exportar_uma_uf(tmp_path):
     (caminho,) = desenho.exportar(tmp_path, ufs=["53"])
     fc = json.loads(caminho.read_bytes())
     assert caminho.name == "53.json" and [f["id"] for f in fc["features"]] == ["53", "5300108"]
+
+
+# ---------------------------------------------------------------- data/mapas.json (uso externo)
+
+
+def _svg_do_json(cat: dict, codigo: str, largura: int = 600) -> str:
+    """Segue `cat["receita"]` ao pé da letra, sem o geoibge: é o que um usuário externo faria."""
+    uf = cat["ufs"][codigo[:2]]
+    mun = uf["municipios"][codigo]
+    cores, raio = cat["cores"], cat["raio_marcador"]
+    m, w, h = raio + 4, uf["largura"], uf["altura"]
+    estilo = 'stroke-linejoin="round" vector-effect="non-scaling-stroke"'
+    fundo = "".join(x["d"] for x in uf["municipios"].values() if x["nivel"] == "municipio")
+    agua = "".join(x["d"] for x in uf["municipios"].values() if x["nivel"] == "area_operacional")
+    partes = [
+        f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{-m} {-m} {w + 2 * m:.1f} {h + 2 * m:.1f}" '
+        f'width="{largura}" height="{round(largura * (h + 2 * m) / (w + 2 * m))}">',
+        f"<title>{html.escape(mun['nome'])} ({uf['sigla']})</title>",
+        f'<path d="{fundo}" fill="{cores["fundo"]}" fill-rule="evenodd" stroke="{cores["borda"]}" '
+        f'stroke-width="0.5" {estilo}/>',
+    ]
+    if agua:
+        partes.append(f'<path d="{agua}" fill="{cores["agua"]}" fill-rule="evenodd" stroke="none"/>')
+    partes += [
+        f'<path id="m{codigo}" d="{mun["d"]}" fill="{cores["destaque"]}" fill-rule="evenodd" '
+        f'stroke="{cores["destaque"]}" stroke-width="0.5" {estilo}/>',
+        f'<path d="{uf["contorno"]}" fill="none" stroke="{cores["uf"]}" stroke-width="1.2" {estilo}/>',
+    ]
+    x0, y0, x1, y1 = mun["caixa"]
+    if max(x1 - x0, y1 - y0) < raio:
+        partes.append(f'<circle cx="{(x0 + x1) / 2:.1f}" cy="{(y0 + y1) / 2:.1f}" r="{raio}" fill="none" '
+                      f'stroke="{cores["destaque"]}" stroke-width="2" {estilo}/>')
+    partes.append("</svg>")
+    return "\n".join(partes)
+
+
+@pytest.fixture(scope="module")
+def publicado() -> dict:
+    return json.loads(desenho.JSON_PUBLICO.read_bytes())
+
+
+def test_json_publicado_em_dia(publicado):
+    assert publicado == json.loads(json.dumps(desenho.catalogo(), ensure_ascii=False))  # senão: make mapas-json
+    assert len(publicado["ufs"]) == 27 and publicado["formato"] == "geoibge-mapas/1"
+    assert sum(len(u["municipios"]) for u in publicado["ufs"].values()) >= 5570
+
+
+@pytest.mark.parametrize("codigo", ["3550308", "3500600", "2605459", "4300002", "5300108", "3205309"])
+def test_json_reproduz_o_svg(publicado, codigo):
+    assert _svg_do_json(publicado, codigo) == gi.svg(codigo)
+
+
+def test_cli_exportar_json(tmp_path):
+    destino = tmp_path / "sub" / "mapas.json"
+    assert main(["exportar-json", "--destino", str(destino)]) == 0
+    cat = json.loads(destino.read_bytes())
+    assert cat["ufs"]["53"]["municipios"]["5300108"]["nome"] == "Brasília"
+    assert set(cat["cores"]) == {"fundo", "agua", "borda", "uf", "destaque"}
+
+
+def test_data_mapas_json_versionado():
+    raiz = desenho.JSON_PUBLICO.parents[1]
+    ignorado = subprocess.run(["git", "check-ignore", "-q", str(desenho.JSON_PUBLICO)], cwd=raiz).returncode
+    assert ignorado == 1  # 1 = não ignorado; o resto de data/ (shapefiles) continua fora
+    assert subprocess.run(["git", "check-ignore", "-q", "data/BR_UF_2025"], cwd=raiz).returncode == 0

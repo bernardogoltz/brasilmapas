@@ -1,5 +1,6 @@
-# Shapefiles IBGE (~520MB), baixar do site do IBGE
-data/
+# Shapefiles IBGE (~520MB), baixar do site do IBGE; data/mapas.json é publicado (make mapas-json)
+data/*
+!data/mapas.json
 
 # Segredos locais
 .env

@@ -2,6 +2,7 @@
 
 `exportar()` gera `mapas/{cd_uf}.json` a partir dos marts, uma vez por edição. `mapa()` e `svg()` só leem esses
 arquivos, com cache por UF: o código IBGE já diz a UF (2 primeiros dígitos), então cada chamada abre um arquivo.
+`exportar_json()` grava `data/mapas.json`: os paths já projetados de todas as UFs, para quem não usa Python.
 Só stdlib aqui: `import geoibge.desenho` não carrega geopandas nem psycopg.
 """
 
@@ -16,6 +17,7 @@ from pathlib import Path
 DIR = Path(__file__).parent / "mapas"
 LADO_PX = 1000  # simplificação por UF: erro de ~1 px num desenho de 1000 px no lado maior
 DISTANCIA_REMOTA = 2.0  # graus; parte de município mais longe do continente sai (Trindade, de Vitória)
+JSON_PUBLICO = Path(__file__).parents[2] / "data" / "mapas.json"
 VIACEP = "https://viacep.com.br/ws/{cep}/json/"
 RAIO_MARCADOR = 18  # unidades do viewBox (lado maior = LADO_PX); só para município pequeno demais para ver
 CORES = {"fundo": "#e4e4e4", "agua": "#cfe1f2", "borda": "#ffffff", "uf": "#4d4d4d", "destaque": "#d62728"}
@@ -124,9 +126,9 @@ def _desenho(cd_uf: str) -> dict:
         if nivel == "uf":
             contorno = d
             continue
-        paths[f["id"]], caixas[f["id"]] = d, caixa
+        paths[f["id"]], caixas[f["id"]] = d, [round(v, 1) for v in caixa]
         (fundo if nivel == "municipio" else agua).append(d)
-    largura, altura = (xmax - xmin) * cosseno * escala, (ymax - ymin) * escala
+    largura, altura = round((xmax - xmin) * cosseno * escala, 1), round((ymax - ymin) * escala, 1)
     return {"largura": largura, "altura": altura, "fundo": "".join(fundo), "agua": "".join(agua),
             "contorno": contorno, "paths": paths, "caixas": caixas}
 
@@ -160,6 +162,49 @@ def svg(municipio=None, *, cep=None, largura: int = 600) -> str:
                       f'stroke="{CORES["destaque"]}" stroke-width="2" {estilo}/>')
     partes.append("</svg>")
     return "\n".join(partes)
+
+
+# ---------------------------------------------------------------- JSON público (sem Python)
+
+PROJECAO = "equirretangular no paralelo central da UF; y para baixo; lado maior = lado_px; 1 casa decimal"
+RECEITA = [
+    "UF = ufs[codigo[:2]]; código de 6 dígitos: o município cujo código de 7 começa por ele",
+    "m = raio_marcador + 4; <svg viewBox='-m -m (largura+2m) (altura+2m)'>; <title> = nome (sigla), escapado",
+    "fundo: d de todos os municípios com nivel 'municipio', concatenados; fill cores.fundo, stroke cores.borda 0.5",
+    "água: d dos de nivel 'area_operacional' (lagoas do RS), fill cores.agua, sem stroke",
+    "destaque: d do pedido, fill e stroke cores.destaque 0.5",
+    "contorno: d da UF, sem fill, stroke cores.uf 1.2",
+    "se max(x1-x0, y1-y0) da caixa do pedido < raio_marcador: círculo no centro da caixa, raio_marcador, "
+    "stroke cores.destaque 2",
+    "paths com fill-rule evenodd; strokes com vector-effect non-scaling-stroke",
+]
+
+
+def catalogo() -> dict:
+    """Todas as UFs já projetadas: o necessário para montar o SVG de `svg()` em qualquer linguagem."""
+    ufs = {}
+    for cd_uf in sorted(c.stem for c in DIR.glob("*.json")):
+        base, d = _uf(cd_uf), _desenho(cd_uf)
+        ufs[cd_uf] = {
+            "sigla": base["sg_uf"], "nome": base["nm_uf"], "largura": d["largura"], "altura": d["altura"],
+            "contorno": d["contorno"],
+            "municipios": {
+                f["id"]: {"nome": f["properties"]["nome"], "nivel": f["properties"]["nivel"],
+                          "caixa": d["caixas"][f["id"]], "d": d["paths"][f["id"]]}
+                for f in base["features"] if f["properties"]["nivel"] != "uf"
+            },
+        }
+    return {"formato": "geoibge-mapas/1", "edicao": _uf(next(iter(ufs)))["edicao"],
+            "fonte": "IBGE, Malha Municipal (simplificada por UF)", "projecao": PROJECAO, "lado_px": LADO_PX,
+            "raio_marcador": RAIO_MARCADOR, "cores": CORES, "receita": RECEITA, "ufs": ufs}
+
+
+def exportar_json(destino: Path = JSON_PUBLICO) -> Path:
+    """Grava o catálogo compacto (UTF-8) em `destino`, por padrão `data/mapas.json`, versionado no git."""
+    destino = Path(destino)
+    destino.parent.mkdir(parents=True, exist_ok=True)
+    destino.write_text(json.dumps(catalogo(), ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    return destino
 
 
 # ---------------------------------------------------------------- exportação (banco)

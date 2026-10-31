@@ -43,6 +43,8 @@ def main(argv: list[str] | None = None) -> int:
     m.add_argument("--largura", type=int, default=600)
     e = sub.add_parser("exportar-mapas", help="gera os GeoJSON por UF a partir dos marts")
     e.add_argument("--destino", type=Path, default=gi.desenho.DIR)
+    j = sub.add_parser("exportar-json", help="grava data/mapas.json: paths projetados de todas as UFs (sem banco)")
+    j.add_argument("--destino", type=Path, default=gi.desenho.JSON_PUBLICO)
     args = parser.parse_args(argv)
 
     if args.comando == "mapa":
@@ -60,6 +62,9 @@ def main(argv: list[str] | None = None) -> int:
             print(args.saida)
         else:
             print(texto)
+        return 0
+    if args.comando == "exportar-json":
+        print(gi.desenho.exportar_json(args.destino))
         return 0
     if args.comando == "exportar-mapas":
         for caminho in gi.desenho.exportar(args.destino, edicao=args.edicao):
