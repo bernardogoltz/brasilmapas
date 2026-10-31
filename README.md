@@ -139,7 +139,7 @@ Versões de referência (PyPI, Docker Hub e GitHub em 30/10/2026): Airflow 3.3.2
 
 ## Fontes de dados
 
-Todas públicas, do IBGE. Abreviação: `$GEOFTP` = `https://geoftp.ibge.gov.br/organizacao_do_territorio/malhas_territoriais`.
+Todas públicas, do IBGE. Abreviações: `$GEOFTP` = `https://geoftp.ibge.gov.br/organizacao_do_territorio/malhas_territoriais`; `$API` = `https://servicodados.ibge.gov.br/api`.
 
 | Camada | Caminho | Formato e tamanho | Registros | Uso |
 |---|---|---|---|---|
@@ -148,11 +148,11 @@ Todas públicas, do IBGE. Abreviação: `$GEOFTP` = `https://geoftp.ibge.gov.br/
 | Regiões imediatas e intermediárias 2025 | `…/municipio_2025/Brasil/BR_RG_{Imediatas,Intermediarias}_2025.zip` | SHP zip | — | hierarquia regional |
 | Recorte por UF 2025 | `…/municipio_2025/UFs/{UF}/{UF}_Municipios_2025.zip` | SHP zip (RS: 9,7 MB) | — | desenvolvimento e CI |
 | Edições anteriores | `$GEOFTP/malhas_municipais/municipio_{2010,2013…2024}/` | SHP zip | 5.572 em 2015, 2019 e 2022 | série histórica |
-| Setores censitários 2022 | `$GEOFTP/malhas_de_setores_censitarios__divisoes_intramunicipais/censo_2022/setores/{gpkg,shp}/{BR,UF}/` | GPKG 1,4 GB · SHP zip 738 MB | 468.099 | distrito, subdistrito, bairro, situação, favelas e comunidades urbanas |
+| Setores censitários 2022 | `$GEOFTP/../malhas_de_setores_censitarios__divisoes_intramunicipais/censo_2022/setores/…` | GPKG 1,4 GB · SHP zip 738 MB | 468.099 | distrito, subdistrito, bairro, situação, favelas e comunidades urbanas |
 | Bairros 2022 | `…/censo_2022/bairros/{gpkg,shp}/BR/BR_bairros_CD2022.*` | GPKG 53 MB · SHP zip 26 MB | 17.575 bairros em 895 municípios | bairro |
 | Distritos e subdistritos 2022 | `…/censo_2022/{distritos,subdistritos}/{gpkg,shp}/{BR,UF}/` | GPKG · SHP zip ~240 MB cada | 10.699 distritos · 11.307 subdistritos | geometria de distrito |
-| API Localidades | `https://servicodados.ibge.gov.br/api/v1/localidades/{estados,municipios,distritos,subdistritos,regioes-imediatas,regioes-intermediarias}?view=nivelado` | JSON | 27 · 5.571 · 10.751 · 646 · 510 · 133 | nomes, hierarquia, conferência de contagens |
-| API Malhas v3 | `https://servicodados.ibge.gov.br/api/v3/malhas/municipios/{id}?formato=application/vnd.geo+json&qualidade={minima,intermediaria,maxima}` | GeoJSON (SP: 1,3 KB na mínima, 25 KB na máxima) | — | referência de comparação, não fonte |
+| API Localidades | `$API/v1/localidades/{estados,municipios,distritos,…}?view=nivelado` | JSON | 27 · 5.571 · 10.751 · 646 · 510 · 133 | nomes, hierarquia, conferência de contagens |
+| API Malhas v3 | `$API/v3/malhas/municipios/{id}?formato=application/vnd.geo+json&qualidade=…` | GeoJSON (SP: 1,3 KB na mínima, 25 KB na máxima) | — | referência de comparação, não fonte |
 
 <details>
 <summary>Colunas conferidas (todas em EPSG:4674, SIRGAS 2000)</summary>
@@ -243,17 +243,17 @@ models/
 │   ├── stg_ibge__bairros_2022.sql        # agrega as feições por cd_bairro
 │   └── stg_ibge__localidades.sql         # JSONB → colunas
 ├── intermediate/
-│   ├── int_municipios__geom_valida.sql   # ST_MakeValid + ST_CollectionExtract(…, 3) + ST_Multi
+│   ├── int_municipios__geom_valida.sql   # ST_MakeValid + ST_Multi
 │   ├── int_municipios__simplificado.sql  # ST_CoverageSimplify em duas tolerâncias
 │   ├── int_municipios__vizinhos.sql      # pares que fazem divisa (ST_Touches)
 │   └── int_municipios__hierarquia.sql    # malha × Localidades
 └── marts/
-    ├── dim_municipio.sql   # sem geometria: códigos (7 e 6 dígitos), nomes, nm_busca, hierarquia, bbox, ponto interno
-    ├── geo_municipio.sql   # geom_alta / geom_media / geom_baixa + GeoJSON pré-serializado
+    ├── dim_municipio.sql   # sem geometria: códigos, nomes, nm_busca, hierarquia, bbox
+    ├── geo_municipio.sql   # 3 resoluções + GeoJSON pré-serializado
     ├── geo_uf.sql
     ├── geo_bairro.sql
     ├── lkp_municipio.sql   # pedaços de ST_Subdivide; consultado pelo reverse()
-    └── lkp_setor.sql       # setores 2022 subdivididos, com a hierarquia intramunicipal inteira
+    └── lkp_setor.sql       # setores 2022 subdivididos, com a hierarquia
 ```
 
 Dois modelos centrais:
@@ -278,11 +278,11 @@ order by st_geohash(geom)  -- vizinhos no espaço ficam vizinhos no disco
 ```
 
 ```sql
--- intermediate/int_municipios__simplificado.sql: simplifica a cobertura inteira de uma vez
+-- intermediate/int_municipios__simplificado.sql: simplifica a cobertura toda
 select edicao, cd_mun,
        geom                                                        as geom_alta,
-       st_coveragesimplify(geom, 0.001) over (partition by edicao) as geom_media,  -- ~100 m
-       st_coveragesimplify(geom, 0.01)  over (partition by edicao) as geom_baixa   -- ~1 km
+       st_coveragesimplify(geom, 0.001) over (partition by edicao) as geom_media, -- ~100 m
+       st_coveragesimplify(geom, 0.01)  over (partition by edicao) as geom_baixa  -- ~1 km
 from {{ ref('int_municipios__geom_valida') }}
 where edicao = {{ var('edicao') }}
 ```
@@ -364,7 +364,8 @@ with p as (
     select st_setsrid(st_makepoint(:lon, :lat), 4674) as geom
 )
 select m.cd_mun, m.nm_mun, m.sg_uf, m.is_municipio,
-       s.cd_setor, s.situacao, s.cd_dist, s.nm_dist, s.cd_subdist, s.nm_subdist, s.cd_bairro, s.nm_bairro
+       s.cd_setor, s.situacao, s.cd_dist, s.nm_dist,
+       s.cd_subdist, s.nm_subdist, s.cd_bairro, s.nm_bairro
 from p
 left join lateral (
     select l.cd_mun, l.nm_mun, l.sg_uf, l.is_municipio
@@ -374,7 +375,8 @@ left join lateral (
     limit 1
 ) m on true
 left join lateral (
-    select l.cd_setor, l.situacao, l.cd_dist, l.nm_dist, l.cd_subdist, l.nm_subdist, l.cd_bairro, l.nm_bairro
+    select l.cd_setor, l.situacao, l.cd_dist, l.nm_dist,
+           l.cd_subdist, l.nm_subdist, l.cd_bairro, l.nm_bairro
     from marts.lkp_setor l
     where st_intersects(l.geom, p.geom)
     limit 1
@@ -473,10 +475,10 @@ geo/
 ├── .env.example
 ├── Makefile                      # comandos do projeto (make help)
 ├── scripts/status.py             # painel do make status (rich)
-├── pyproject.toml                # uv: geoibge (src/), marimo, geopandas, pyogrio, psycopg, lonboard, pytest
+├── pyproject.toml                # uv: geoibge, marimo, geopandas, psycopg, lonboard
 ├── airflow/
 │   ├── Dockerfile                # Airflow + GDAL + tippecanoe + venv do dbt
-│   ├── dags/                     # ibge_malha_municipal, ibge_localidades, ibge_censo2022_intramunicipal, dbt_geo
+│   ├── dags/                     # as 4 DAGs (ibge_*, dbt_geo)
 │   └── include/ibge/             # listagem do geoftp, download com checksum, validação
 ├── dbt/
 │   ├── dbt_project.yml
@@ -485,7 +487,7 @@ geo/
 │   ├── seeds/                    # manifesto de edições, pontos de referência
 │   ├── macros/                   # testes genéricos espaciais
 │   └── models/{staging,intermediate,marts}/
-├── src/geoibge/                  # biblioteca: ufs, municipios, buscar, reverse, validar, cli
+├── src/geoibge/                  # biblioteca e CLI
 ├── tests/
 ├── tiles/martin.yaml
 ├── notebooks/
