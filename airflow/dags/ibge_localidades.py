@@ -21,7 +21,7 @@ RAW_LOCALIDADES = Asset("raw.localidades")
     tags=["ibge", "ingestao"],
 )
 def ibge_localidades():
-    @task(outlets=[RAW_LOCALIDADES])
+    @task
     def coletar(nivel: str) -> int:
         inicio = time.monotonic()
         itens = localidades.buscar(nivel)
@@ -39,7 +39,12 @@ def ibge_localidades():
             })
         return len(itens)
 
-    coletar.expand(nivel=localidades.NIVEIS)
+    @task(outlets=[RAW_LOCALIDADES])
+    def publicar(contagens: list[int]) -> int:
+        """Atualiza o asset uma vez só, depois de todos os níveis (dispara o dbt_geo)."""
+        return sum(contagens)
+
+    publicar(coletar.expand(nivel=localidades.NIVEIS))
 
 
 ibge_localidades()

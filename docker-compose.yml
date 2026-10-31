@@ -15,11 +15,15 @@ x-airflow: &airflow
     AIRFLOW__DAG_PROCESSOR__REFRESH_INTERVAL: 30
     AIRFLOW_CONN_GEO_LOADER: postgresql://loader:${LOADER_PASSWORD}@postgis:5432/geo
     GEO_DATA_DIR: /opt/airflow/data
+    DBT_HOST: postgis
+    DBT_PORT: 5432
+    TRANSFORMER_PASSWORD: ${TRANSFORMER_PASSWORD}
     PYTHONPATH: /opt/airflow/include
   volumes:
     - ./airflow/dags:/opt/airflow/dags:z
     - ./airflow/include:/opt/airflow/include:z
     - ./data:/opt/airflow/data:z
+    - ./dbt:/opt/airflow/dbt:z
   depends_on:
     postgis:
       condition: service_healthy

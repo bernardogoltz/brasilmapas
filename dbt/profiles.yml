@@ -1,0 +1,12 @@
+geo:
+  target: dev
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DBT_HOST', 'localhost') }}"
+      port: "{{ env_var('DBT_PORT', '5432') | int }}"
+      user: transformer
+      password: "{{ env_var('TRANSFORMER_PASSWORD', 'transformer') }}"
+      dbname: geo
+      schema: staging
+      threads: 4

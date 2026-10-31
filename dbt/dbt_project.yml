@@ -1,0 +1,30 @@
+name: geo
+version: "0.1.0"
+profile: geo
+config-version: 2
+
+model-paths: [models]
+seed-paths: [seeds]
+macro-paths: [macros]
+test-paths: [tests]
+
+vars:
+  # tolerâncias de ST_CoverageSimplify, em graus (EPSG:4674): ~100 m e ~1 km
+  tolerancia_media: 0.001
+  tolerancia_baixa: 0.01
+
+models:
+  geo:
+    staging:
+      +schema: staging
+      +materialized: view
+    intermediate:
+      +schema: intermediate
+      +materialized: table
+    marts:
+      +schema: marts
+      +materialized: table
+
+seeds:
+  geo:
+    +schema: staging

@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: br_municipios
+        description: Malha municipal do IBGE, uma linha por feição e edição (ogr2ogr).
+      - name: localidades_municipios
+        description: API Localidades, um retrato JSONB por dia de coleta.
+      - name: localidades_estados

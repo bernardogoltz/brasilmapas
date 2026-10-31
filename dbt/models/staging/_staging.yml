@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: stg_ibge__municipios
+    data_tests:
+      - chave_unica:
+          arguments: {colunas: [edicao, cd_mun]}
+    columns:
+      - name: cd_mun
+        data_tests: [not_null]
+      - name: sg_uf
+        data_tests: [not_null]
+      - name: geom
+        data_tests: [srid]
+
+  - name: stg_ibge__localidades_municipios
+    columns:
+      - name: cd_mun
+        data_tests: [unique, not_null]
+
+  - name: stg_ibge__localidades_estados
+    columns:
+      - name: cd_uf
+        data_tests: [unique, not_null]
+      - name: sg_uf
+        data_tests: [unique, not_null]

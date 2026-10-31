@@ -15,10 +15,27 @@ Tudo passa pelo `make` (requer Docker e `uv`). `make` sozinho lista os comandos.
 | `make dags-check` | lista erros de import das DAGs, no container |
 | `make carregar` | dispara `ibge_malha_municipal`; `EDICAO=2019` para backfill |
 | `make localidades` | dispara `ibge_localidades` |
+| `make dbt` | `dbt build` local (staging → marts + testes) contra o banco do compose |
+| `make transformar` | dispara `dbt_geo` (Cosmos) no Airflow; também roda sozinha quando a ingestão atualiza um asset |
 | `make down` | para os containers de todos os profiles (os dados ficam no volume) |
 | `make status` | serviços: estado, porta, uptime, CPU e memória |
 | `make notebook` | abre `01_explorar_fontes.py` no marimo (baixa a malha da UF escolhida) |
 | `make test` | roda os testes em `tests/` (pytest) |
+
+## Serviços
+
+Endereços com as portas padrão do `.env.example`.
+
+| Serviço | Container | Endereço | Acesso |
+|---|---|---|---|
+| PostgreSQL + PostGIS | `postgis` | `localhost:5432` (`POSTGRES_PORT`) | `postgres`/`postgres`; bancos `geo` e `airflow` |
+| Airflow UI e API | `airflow-apiserver` | http://localhost:8080 (`AIRFLOW_PORT`) | sem login (todos admin) |
+| Airflow scheduler | `airflow-scheduler` | interno (health em `:8974`) | — |
+| Airflow DAG processor | `airflow-dag-processor` | interno | — |
+| Airflow triggerer | `airflow-triggerer` | interno | — |
+| marimo | local (`make notebook`) | http://localhost:2718 | token na URL impressa |
+
+Papéis do banco `geo`: `loader`, `transformer`, `api_reader` (senhas no `.env`). Os serviços Airflow só sobem com o profile `airflow` (`make airflow`).
 
 ## Objetivo
 
@@ -143,6 +160,7 @@ Todas públicas, do IBGE. Abreviação: `$GEOFTP` = `https://geoftp.ibge.gov.br/
 7. **Nome não é chave.** "Bom Jesus" existe em PI, RN, PB, SC e RS. → busca por nome sempre devolve a UF; a chave é `cd_mun` (7 dígitos, o último é verificador; o DATASUS usa os 6 primeiros).
 8. **Área diverge entre fontes.** São Paulo: `AREA_KM2` = 1.522,683 na malha e 1.521,202 na API de metadados. → comparar áreas só com tolerância.
 9. **Há polígonos gigantes.** Altamira/PA tem 159.533 km²: testar um ponto contra o polígono inteiro é caro. → `ST_Subdivide` (ver [Eficiência](#eficiência)).
+10. **A cobertura do IBGE não é perfeita.** A malha 2025 tem 19 arestas inválidas (`ST_CoverageInvalidEdges`, frestas e sobreposições entre vizinhos) e a união por UF sai inválida em AC, PI e CE. → teste de cobertura como aviso; a simplificação não pode piorar a contagem; a geometria da UF passa por `ST_MakeValid`.
 
 ## Pipeline
 
@@ -472,9 +490,9 @@ geo/
 - [x] DAG `ibge_localidades`
 
 **Fase 2 — Transformação**
-- [ ] dbt: staging e marts de município e UF
-- [ ] Testes de chave, geometria, contagem e cobertura
-- [ ] Cosmos + asset ligando ingestão → dbt
+- [x] dbt: staging e marts de município e UF (`dim_municipio`, `geo_municipio`, `geo_uf`)
+- [x] Testes de chave, geometria, contagem e cobertura
+- [x] Cosmos + asset ligando ingestão → dbt (`dbt_geo`)
 
 **Fase 3 — Serving**
 - [ ] `geoibge`: `ufs()`, `municipios()`, `validar()` e `reverse()` (até município)

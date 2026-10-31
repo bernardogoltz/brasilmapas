@@ -1,0 +1,53 @@
+version: 2
+
+models:
+  - name: dim_municipio
+    description: Uma linha por município (ou área operacional) e edição, sem geometria.
+    data_tests:
+      - chave_unica:
+          arguments: {colunas: [edicao, cd_mun]}
+    columns:
+      - name: cd_mun
+        data_tests: [not_null]
+      - name: sg_uf
+        data_tests:
+          - not_null
+          - relationships:
+              arguments: {to: ref('stg_ibge__localidades_estados'), field: sg_uf}
+      - name: nm_uf
+        data_tests: [not_null]
+
+  - name: geo_municipio
+    description: Geometria do município em três resoluções; as simplificadas preservam as divisas.
+    data_tests:
+      - chave_unica:
+          arguments: {colunas: [edicao, cd_mun]}
+      # A malha do IBGE já tem frestas e sobreposições (19 arestas em 2025): aviso, não erro.
+      # O teste singular assert_simplificacao_nao_piora_cobertura cobra que a simplificação não piore.
+      - cobertura_valida:
+          arguments: {column_name: geom_alta, particao: edicao}
+          config: {severity: warn}
+    columns:
+      - name: geom_alta
+        data_tests: [geometria_valida, srid]
+      - name: geom_media
+        data_tests: [geometria_valida, srid]
+      - name: geom_baixa
+        data_tests: [geometria_valida, srid]
+
+  - name: geo_uf
+    description: UF como união dos seus municípios.
+    data_tests:
+      - chave_unica:
+          arguments: {colunas: [edicao, cd_uf]}
+    columns:
+      - name: sg_uf
+        data_tests: [not_null]
+      - name: nm_uf
+        data_tests: [not_null]
+      - name: geom_alta
+        data_tests: [geometria_valida, srid]
+      - name: geom_media
+        data_tests: [geometria_valida, srid]
+      - name: geom_baixa
+        data_tests: [geometria_valida, srid]
