@@ -1,8 +1,19 @@
 # IBGE Dados Geográficos
 
-Projeto de estudo de engenharia de dados: um pipeline que ingere as malhas territoriais do IBGE, modela com **dbt**, orquestra com **Airflow**, explora com **marimo**, monitora com **Grafana** e serve os dados de forma eficiente — tudo local com **Docker Compose**.
+Projeto de estudo de engenharia de dados: um pipeline que ingere as malhas territoriais do IBGE, modela com **dbt**, orquestra com **Airflow**, explora com **marimo**, monitora com **Grafana** e entrega os dados numa **biblioteca Python** — tudo local com **Docker Compose**.
 
 > **Status: planejamento.** Caminhos, colunas e contagens das fontes foram conferidos direto no IBGE em 30/10/2026. O resto é desenho a implementar.
+
+## Comandos
+
+Tudo passa pelo `make` (requer Docker e `uv`). `make` sozinho lista os comandos.
+
+| Comando | O que faz |
+|---|---|
+| `make up` | cria o `.env` se faltar, sobe os containers, espera ficarem saudáveis e mostra o status |
+| `make down` | para os containers (os dados ficam no volume) |
+| `make status` | serviços: estado, porta, uptime, CPU e memória |
+| `make notebook` | abre `01_explorar_fontes.py` no marimo (baixa a malha da UF escolhida) |
 
 ## Objetivo
 
@@ -10,14 +21,14 @@ Responder três perguntas, rápido e com a origem de cada dado explícita:
 
 | Pergunta | Entrada | Saída |
 |---|---|---|
-| Mostre este município | código IBGE (`3550308`) ou nome + UF (`São Paulo`, `SP`) | atributos, hierarquia, bbox e geometria em 3 resoluções; camada no mapa |
-| Mostre este estado | sigla ou código (`SP`, `35`) | geometria da UF e dos seus municípios |
+| Mostre estes municípios | lista de códigos IBGE (`3550308`) ou nomes + UF (`São Paulo`, `SP`) | atributos, hierarquia, bbox, geometria em 3 resoluções e validação |
+| Mostre estes estados | lista de siglas ou códigos (`SP`, `35`) | geometria das UFs e dos seus municípios, com validação |
 | Onde fica este ponto? | `lat`, `lon` (um ponto ou um lote) | UF, município, regiões imediata e intermediária, distrito, subdistrito, bairro, setor censitário, situação urbana/rural |
 
 Metas (a validar com benchmark):
 
-- `/reverse` de um ponto com p95 < 50 ms; lote de 100 mil pontos em < 60 s.
-- Geometria de município com p95 < 100 ms; resolução baixa < 50 KB.
+- `reverse()` de um ponto com p95 < 50 ms; lote de 100 mil pontos em < 60 s.
+- `municipios()` de um código com p95 < 100 ms; validação de uma UF inteira em < 5 s; resolução baixa < 50 KB.
 - Pipeline idempotente e reprocessável por edição da malha.
 - Toda resposta informa a edição de cada camada (ex.: malha 2025, setores 2022).
 
@@ -41,7 +52,7 @@ flowchart LR
     end
 
     subgraph serving["Serving"]
-        api["FastAPI<br/>/municipios /ufs /reverse"]
+        lib["Biblioteca Python<br/>ufs() municipios() reverse() validar()"]
         pmtiles["PMTiles<br/>tippecanoe"]
         martin["Martin<br/>vector tiles"]
     end
@@ -52,22 +63,21 @@ flowchart LR
     end
 
     marimo["marimo<br/>exploração e QA"]
-    mapa["Mapa web<br/>MapLibre"]
+    qgis["QGIS<br/>vector tiles"]
 
     ftp --> dags
     loc --> dags
     dags -->|ogr2ogr| raw
     raw -->|dbt| stg
     stg -->|dbt| marts
-    marts --> api
+    marts --> lib
     marts --> martin
     marts --> pmtiles
     pmtiles --> martin
-    api --> mapa
-    martin --> mapa
+    lib --> marimo
+    martin --> qgis
     marts --> marimo
     dags -.->|métricas| prom
-    api -.->|métricas| prom
     prom --> grafana
     marts -.->|testes dbt| grafana
 ```
@@ -82,13 +92,13 @@ flowchart LR
 | dbt no Airflow | astronomer-cosmos | cada modelo e teste do dbt vira uma task |
 | Qualidade | testes do dbt + pacote elementary | resultados dos testes em tabelas, lidas pelo Grafana |
 | Exploração | marimo | notebooks reativos em `.py` (versionáveis): exploração, QA visual, benchmarks |
-| API | FastAPI | `/municipios`, `/ufs`, `/reverse` |
-| Tiles | Martin + tippecanoe (PMTiles) | vector tiles para o mapa |
-| Métricas | Prometheus + statsd-exporter + postgres-exporter | coleta de Airflow, API e banco |
-| Dashboards e alertas | Grafana | pipeline, qualidade, API e banco |
+| Interface | biblioteca Python (`geoibge`) | `ufs()`, `municipios()`, `reverse()`, `validar()`; retorna GeoDataFrame |
+| Tiles | Martin + tippecanoe (PMTiles) | vector tiles para QGIS e notebooks |
+| Métricas | Prometheus + statsd-exporter + postgres-exporter | coleta de Airflow e banco |
+| Dashboards e alertas | Grafana | pipeline, qualidade e banco |
 | Python local | uv | dependências e ambientes |
 
-Versões de referência (PyPI, Docker Hub e GitHub em 30/10/2026): Airflow 3.3.2 · astronomer-cosmos 1.15.1 · dbt-core 1.12.6 · dbt-postgres 1.11.0 · marimo 0.25.2 · FastAPI 0.162.0 · imagem `postgis/postgis:18-3.6` · Martin 1.16.0 · tippecanoe 2.79.0 · Grafana 13.3.0. Fixar no `pyproject.toml` e no compose ao implementar.
+Versões de referência (PyPI, Docker Hub e GitHub em 30/10/2026): Airflow 3.3.2 · astronomer-cosmos 1.15.1 · dbt-core 1.12.6 · dbt-postgres 1.11.0 · marimo 0.25.2 · imagem `postgis/postgis:18-3.6` · Martin 1.16.0 · tippecanoe 2.79.0 · Grafana 13.3.0. Fixar no `pyproject.toml` e no compose ao implementar.
 
 ## Fontes de dados
 
@@ -119,7 +129,7 @@ Todas públicas, do IBGE. Abreviação: `$GEOFTP` = `https://geoftp.ibge.gov.br/
 
 ### O que os dados já ensinaram (vira regra ou teste)
 
-1. **Nem toda feição é município.** A malha 2025 tem 5.573 feições para 5.571 municípios: entram `4300001 Área Operacional "Lagoa Mirim"` e `4300002 Área Operacional "Lagoa dos Patos"` (RS). → coluna `is_municipio`; o `/reverse` responde "área operacional" sem inventar município.
+1. **Nem toda feição é município.** A malha 2025 tem 5.573 feições para 5.571 municípios: entram `4300001 Área Operacional "Lagoa Mirim"` e `4300002 Área Operacional "Lagoa dos Patos"` (RS). → coluna `is_municipio`; o `reverse()` responde "área operacional" sem inventar município.
 2. **A malha muda depois do Censo.** `5101837 Boa Esperança do Norte/MT` está na malha 2025, mas não na malha 2022 nem nos distritos 2022; distritos são 10.699 na malha 2022 e 10.751 na API hoje. Um ponto ali cai num setor 2022 de outro município. → o município sempre vem da malha vigente; camadas do Censo só complementam, e a divergência vira métrica.
 3. **Bairro cobre pouco.** Só 895 municípios têm bairros na malha 2022 (Rio de Janeiro tem; São Paulo e Brasília não). Em São Paulo o nível útil é o distrito: são 96, ex.: `355030878 Sé`. → `bairro` pode ser nulo; distrito e subdistrito sempre vêm.
 4. **Chave repetida no GPKG de bairros.** 18.269 feições para 17.575 `CD_BAIRRO` (o SHP tem uma feição por bairro). → agregar por código no staging; teste `unique`.
@@ -159,7 +169,7 @@ flowchart LR
 - **Agendamento por dado:** assets do Airflow 3 ligam ingestão e transformação, sem sensores em loop.
 - **Backfill:** disparo manual com `{"edicao": 2019}` carrega edições históricas.
 - **Falha cedo:** CRS (EPSG:4674), camadas e contagem conferidos antes de tocar no banco.
-- **Publicação explícita:** a API serve a edição registrada em `meta.publicacao`; publicar ou reverter é trocar esse valor, depois do smoke test.
+- **Publicação explícita:** a biblioteca lê a edição registrada em `meta.publicacao`; publicar ou reverter é trocar esse valor, depois do smoke test.
 - **Segredos fora do git:** conexões via `AIRFLOW_CONN_*` no `.env`.
 
 ### Ingestão (`raw`)
@@ -202,7 +212,7 @@ models/
     ├── geo_municipio.sql   # geom_alta / geom_media / geom_baixa + GeoJSON pré-serializado
     ├── geo_uf.sql
     ├── geo_bairro.sql
-    ├── lkp_municipio.sql   # pedaços de ST_Subdivide; consultado pelo /reverse
+    ├── lkp_municipio.sql   # pedaços de ST_Subdivide; consultado pelo reverse()
     └── lkp_setor.sql       # setores 2022 subdivididos, com a hierarquia intramunicipal inteira
 ```
 
@@ -240,7 +250,7 @@ where edicao = {{ var('edicao') }}
 - **Marts de serving são incrementais por edição** (`delete+insert` com `unique_key='edicao'`): a edição nova entra ao lado da publicada, sem trocar a tabela. Um `materialized='table'` no dbt-postgres renomeia a tabela antiga e a remove com `drop … cascade`, levando junto qualquer view que dependa dela.
 - **Simplificação por edição, nunca por UF:** simplificar UF a UF abriria frestas nas divisas estaduais. As áreas operacionais entram na cobertura e só saem depois.
 - Tolerâncias em graus (EPSG:4674), calibradas no notebook `02_simplificacao.py`.
-- `geo_municipio` guarda `ST_AsGeoJSON(geom_*, 5)` pronto (5 casas ≈ 1 m); a API só repassa o texto.
+- `geo_municipio` guarda `ST_AsGeoJSON(geom_*, 5)` pronto (5 casas ≈ 1 m); a biblioteca só converte.
 - `nm_busca = lower(unaccent(nm_mun))` materializado, com índice trigram: `unaccent()` não é `IMMUTABLE`, então não dá para indexar a expressão direto.
 
 ### Qualidade
@@ -259,20 +269,40 @@ where edicao = {{ var('edicao') }}
 
 ## Serving
 
-### API (FastAPI)
+### Biblioteca Python (`geoibge`)
 
-| Rota | Retorno |
+O uso final é Python: um pacote em `src/geoibge/` que lê os marts direto do PostGIS (papel `api_reader`) e devolve GeoDataFrames. Sem servidor HTTP no meio.
+
+```python
+import geoibge as gi
+
+ufs = gi.ufs(["SP", "RJ", 31])                        # sigla ou código
+mun = gi.municipios(["3550308", "330455", ("Bom Jesus", "PI")], resolucao="baixa")
+sp  = gi.municipios(uf="SP")                           # todos da UF
+hits = gi.buscar("bom jesus", uf="PI")                 # sem acento, tolerante a erro
+pts = gi.reverse(df, lat="lat", lon="lon")             # um ponto, lista ou DataFrame
+
+rel = gi.validar(mun)                                  # uma linha por feição
+rel[~rel.ok]
+```
+
+| Função | Retorno |
 |---|---|
-| `GET /v1/ufs` · `GET /v1/ufs/{sigla}` | UF com atributos e GeoJSON |
-| `GET /v1/ufs/{sigla}/municipios?resolucao=baixa` | FeatureCollection dos municípios da UF |
-| `GET /v1/municipios?q=bom+jesus&uf=PI` | busca por nome, sem acento e tolerante a erro de digitação |
-| `GET /v1/municipios/{codigo}?resolucao=alta\|media\|baixa` | Feature GeoJSON + hierarquia + bbox; aceita código de 6 ou 7 dígitos |
-| `GET /v1/municipios/{codigo}/vizinhos` | municípios que fazem divisa |
-| `GET /v1/reverse?lat=-23.5503&lon=-46.6339` | hierarquia completa do ponto |
-| `POST /v1/reverse/lote` | muitos pontos numa chamada (JSON ou CSV) |
-| `GET /metrics` · `GET /health` | Prometheus e healthcheck |
+| `ufs(ids=None)` | GeoDataFrame das UFs (todas, se `None`) |
+| `municipios(ids=None, uf=None, resolucao="media")` | GeoDataFrame com atributos, hierarquia e bbox; aceita código de 6 ou 7 dígitos ou `(nome, uf)` |
+| `buscar(texto, uf=None)` | candidatos por similaridade (trigram), com score |
+| `vizinhos(codigo)` | municípios que fazem divisa |
+| `reverse(pontos, lat=, lon=)` | hierarquia de cada ponto; aceita tupla, lista ou DataFrame |
+| `validar(gdf)` | relatório por feição: `ST_IsValid` + motivo, SRID 4674, área × `AREA_KM2` (1%), vértices, tamanho do GeoJSON, `ok` |
+| `edicoes()` | edições carregadas e a publicada |
 
-Toda rota aceita `?edicao=`; o padrão é a edição publicada. Resposta do `/reverse` (formato planejado):
+- Todo parâmetro aceita `edicao=`; o padrão é a edição publicada em `meta.publicacao`.
+- **Entrada inválida não some:** código inexistente, nome ambíguo ou sigla errada vira `ValueError` listando os itens problemáticos (ou linha com `erro` se `erros="marcar"`).
+- **Validação rápida:** roda no banco, numa consulta só para a lista inteira (`unnest`), sem trazer geometria para o Python; `validar(..., cobertura=True)` acrescenta `ST_CoverageInvalidEdges` entre os itens.
+- Conexão por `GEOIBGE_DSN` (ou `gi.conectar(dsn)`); pool do `psycopg` e leitura com `geopandas.read_postgis`.
+- CLI fina para uso rápido: `uv run geoibge validar SP RJ 3550308`.
+
+Resultado de `reverse()` para um ponto (colunas do DataFrame, mostradas como dict):
 
 ```json
 {
@@ -289,7 +319,7 @@ Toda rota aceita `?edicao=`; o padrão é a edição publicada. Resposta do `/re
 ```
 
 ```sql
--- núcleo do /reverse; ST_MakePoint recebe (x, y) = (lon, lat)
+-- núcleo do reverse(); ST_MakePoint recebe (x, y) = (lon, lat)
 with p as (
     select st_setsrid(st_makepoint(:lon, :lat), 4674) as geom
 )
@@ -313,13 +343,13 @@ left join lateral (
 
 - **Lote:** o mesmo SQL com `from unnest(:ids, :lons, :lats) as t(id, lon, lat)` no lugar do ponto único — uma ida ao banco para milhares de pontos.
 - **Ponto na costa, fora da malha:** fallback para o município mais próximo (`order by geom <-> p.geom`) até 1 km, com aviso.
-- **Fora do Brasil:** `404` depois de um filtro barato pelo bbox nacional.
+- **Fora do Brasil:** linha com `erro="fora_do_brasil"` depois de um filtro barato pelo bbox nacional.
 
 ### Mapas
 
 - **Martin** publica `geo_municipio`, `geo_uf` e `geo_bairro` como vector tiles direto do PostGIS: bom para desenvolvimento.
 - **PMTiles por edição:** PostGIS → FlatGeobuf (`ogr2ogr`) → `tippecanoe` → um `.pmtiles` com municípios, UFs e bairros (bairros só em zoom alto). Arquivo único e estático, servido pelo Martin sem tocar no banco.
-- **`web/index.html`** com MapLibre GL JS: busca por nome (API), destaque do município por `cd_mun` e `fitBounds` pelo bbox; clique no mapa chama `/v1/reverse`.
+- **Notebook `05_explorador.py`** com lonboard: `geoibge.municipios()` → mapa; clique → `geoibge.reverse()`. Martin fica para abrir as camadas no QGIS.
 
 ### Eficiência
 
@@ -329,7 +359,7 @@ left join lateral (
 | `ST_CoverageSimplify` sobre a cobertura nacional | simplificar município a município abre frestas e sobreposições entre vizinhos; a simplificação de cobertura preserva as divisas compartilhadas |
 | Três resoluções e GeoJSON pré-calculados | nada de simplificar ou serializar por requisição |
 | PMTiles por edição | o mapa não toca no banco; um arquivo estático e cacheável |
-| Cache HTTP (`ETag` derivado da edição, `Cache-Control` longo) | o dado muda uma vez por ano; cliente e proxy reaproveitam |
+| Cache local por edição (`functools.cache` + GeoParquet em `~/.cache/geoibge/`) | o dado muda uma vez por ano; consultas repetidas não tocam no banco |
 | Lote com `unnest` + `LATERAL` | uma ida ao banco para milhares de pontos |
 | Ordem espacial na materialização (`order by st_geohash(geom)`) | pontos próximos leem as mesmas páginas do disco |
 | Experimento: H3 pré-computado (`h3-pg`) | células inteiras dentro de um município viram busca por chave; só as de borda fazem point-in-polygon |
@@ -339,7 +369,6 @@ left join lateral (
 Coleta:
 
 - **Airflow** → StatsD (`AIRFLOW__METRICS__STATSD_ON=True`) → `statsd-exporter` → Prometheus: duração e status dos DAG runs, falhas de task, erros de import, heartbeat do scheduler.
-- **API** → `/metrics` (prometheus-fastapi-instrumentator): requisições, latência por rota (histograma), erros, tamanho das respostas.
 - **PostgreSQL** → `postgres-exporter` + `pg_stat_statements`: conexões, cache hit, consultas lentas.
 - **Qualidade** → tabelas do elementary, `meta.cargas` e `obs.*`, lidas direto pelo datasource PostgreSQL do Grafana.
 
@@ -347,11 +376,10 @@ Dashboards, provisionados como código em `infra/grafana/`:
 
 1. **Pipeline:** última edição carregada e publicada, duração e status por DAG e task.
 2. **Qualidade:** testes do dbt por execução, contagens por edição × API Localidades, geometrias inválidas, divergência setores 2022 × malha vigente.
-3. **API:** p50/p95/p99 por rota, requisições por segundo, taxa de erro, perfil das respostas do `/reverse` (com bairro, sem bairro, fora da malha).
-4. **Banco:** conexões, cache hit ratio, consultas mais caras.
-5. **Geomap:** amostra dos pontos consultados no `/reverse`, no painel de mapa do Grafana.
+3. **Banco:** conexões, cache hit ratio, consultas mais caras.
+4. **Consultas da biblioteca:** latência das consultas de `reverse()` e `validar()` via `pg_stat_statements`.
 
-Alertas: DAG falhou; teste do dbt com `error`; p95 do `/reverse` acima da meta por 5 min; edição nova detectada (informativo).
+Alertas: DAG falhou; teste do dbt com `error`; edição nova detectada (informativo).
 
 ## Notebooks (marimo)
 
@@ -363,14 +391,13 @@ Arquivos `.py` em `notebooks/`, abertos com `uv run marimo edit notebooks/<arqui
 | `02_simplificacao.py` | slider de tolerância → tamanho do GeoJSON × fidelidade; simplificação ingênua (frestas) × `ST_CoverageSimplify` |
 | `03_benchmark_reverse.py` | 100 mil pontos aleatórios: polígono inteiro × `ST_Subdivide` × H3; latência e `EXPLAIN ANALYZE` |
 | `04_qa_edicao.py` | diff entre edições: municípios novos, removidos e com limite alterado (`ST_SymDifference`) |
-| `05_explorador.py` | app (`marimo run`): UF → município → mapa; clique → reverse |
+| `05_explorador.py` | app (`marimo run`): UF → município → mapa; clique → `geoibge.reverse()` |
 
 ## Ambiente local (Docker Compose)
 
 | Serviço | Imagem | Porta | Profile |
 |---|---|---|---|
 | `postgis` | `postgis/postgis:18-3.6` | 5432 | sempre |
-| `api` | build `./api` | 8000 | `core` |
 | `martin` | `ghcr.io/maplibre/martin` | 3001 | `core` |
 | `airflow-init`, `airflow-apiserver`, `airflow-scheduler`, `airflow-dag-processor`, `airflow-triggerer` | build `./airflow` | 8080 (api-server) | `airflow` |
 | `prometheus` | `prom/prometheus` | 9090 | `obs` |
@@ -379,7 +406,7 @@ Arquivos `.py` em `notebooks/`, abertos com `uv run marimo edit notebooks/<arqui
 | `postgres-exporter` | `prometheuscommunity/postgres-exporter` | 9187 | `obs` |
 | `marimo` | build `./notebooks` (opcional; dá para rodar com `uv` fora do Docker) | 2718 | `dev` |
 
-- Um PostgreSQL, dois bancos: `airflow` (metadados) e `geo` (dados). Papéis: `loader` escreve no `raw`; `transformer` (dbt) lê o `raw` e escreve nas camadas seguintes; `api_reader` só lê `marts` e `meta`.
+- Um PostgreSQL, dois bancos: `airflow` (metadados) e `geo` (dados). Papéis: `loader` escreve no `raw`; `transformer` (dbt) lê o `raw` e escreve nas camadas seguintes; `api_reader` (biblioteca) só lê `marts` e `meta`.
 - Extensões no `geo`: `postgis`, `pg_trgm`, `unaccent`, `pg_stat_statements` (exige `shared_preload_libraries`).
 - A imagem do Airflow leva GDAL (`ogr2ogr`), tippecanoe e o dbt num virtualenv próprio, como o Cosmos recomenda.
 - O Martin escuta na 3000 por padrão, a mesma porta do Grafana: mapear para 3001.
@@ -388,9 +415,10 @@ Uso pretendido:
 
 ```bash
 cp .env.example .env
-docker compose --profile core --profile airflow up -d   # banco, API, tiles e Airflow
+docker compose --profile core --profile airflow up -d   # banco, tiles e Airflow
 docker compose --profile obs up -d                       # Prometheus e Grafana
 uv run marimo edit notebooks/01_explorar_fontes.py
+uv run python -c 'import geoibge as gi; print(gi.validar(gi.ufs(["SP"])))'
 ```
 
 ## Estrutura do repositório
@@ -400,8 +428,9 @@ geo/
 ├── README.md
 ├── docker-compose.yml
 ├── .env.example
-├── Makefile                      # up, down, dbt, notebook, test
-├── pyproject.toml                # uv: marimo, geopandas, pyogrio, lonboard, pytest
+├── Makefile                      # comandos do projeto (make help)
+├── scripts/status.py             # painel do make status (rich)
+├── pyproject.toml                # uv: geoibge (src/), marimo, geopandas, pyogrio, psycopg, lonboard, pytest
 ├── airflow/
 │   ├── Dockerfile                # Airflow + GDAL + tippecanoe + venv do dbt
 │   ├── dags/                     # ibge_malha_municipal, ibge_localidades, ibge_censo2022_intramunicipal, dbt_geo
@@ -413,12 +442,9 @@ geo/
 │   ├── seeds/                    # manifesto de edições, pontos de referência
 │   ├── macros/                   # testes genéricos espaciais
 │   └── models/{staging,intermediate,marts}/
-├── api/
-│   ├── Dockerfile
-│   ├── app/
-│   └── tests/
+├── src/geoibge/                  # biblioteca: ufs, municipios, buscar, reverse, validar, cli
+├── tests/
 ├── tiles/martin.yaml
-├── web/index.html
 ├── notebooks/
 ├── infra/
 │   ├── postgres/init/            # bancos, extensões, papéis
@@ -431,8 +457,8 @@ geo/
 ## Roadmap
 
 **Fase 0 — Fundação**
-- [ ] `docker-compose.yml` com `postgis` e init (bancos, extensões, papéis); `.gitignore` com `data/` e `.env`
-- [ ] `pyproject.toml` (uv) e `01_explorar_fontes.py` com a malha de uma UF
+- [x] `docker-compose.yml` com `postgis` e init (bancos, extensões, papéis); `.gitignore` com `data/` e `.env`
+- [x] `pyproject.toml` (uv) e `01_explorar_fontes.py` com a malha de uma UF
 
 **Fase 1 — Ingestão**
 - [ ] Airflow no compose (LocalExecutor)
@@ -446,13 +472,13 @@ geo/
 - [ ] Cosmos + asset ligando ingestão → dbt
 
 **Fase 3 — Serving**
-- [ ] FastAPI: `/municipios`, `/ufs` e `/reverse` (até município)
-- [ ] Martin + página MapLibre
+- [ ] `geoibge`: `ufs()`, `municipios()`, `validar()` e `reverse()` (até município)
+- [ ] Martin + `05_explorador.py`
 - [ ] `02_simplificacao.py` e `03_benchmark_reverse.py` para calibrar resoluções e validar as metas
 
 **Fase 4 — Intramunicipal**
 - [ ] DAG do Censo 2022: setores, bairros, distritos e subdistritos
-- [ ] `lkp_setor` e `/reverse` completo
+- [ ] `lkp_setor` e `reverse()` completo
 - [ ] Métrica de divergência setores 2022 × malha vigente
 
 **Fase 5 — Observabilidade**
@@ -461,8 +487,8 @@ geo/
 
 **Fase 6 — Extras**
 - [ ] PMTiles por edição no pipeline
-- [ ] Cache HTTP e `/reverse/lote`
-- [ ] CI (GitHub Actions): `dbt build` com o recorte de uma UF pequena, testes da API, carga das DAGs sem erro de import
+- [ ] Cache local por edição e `reverse()` em lote grande (COPY + tabela temporária)
+- [ ] CI (GitHub Actions): `dbt build` com o recorte de uma UF pequena, testes da biblioteca, carga das DAGs sem erro de import
 - [ ] Experimentos: H3, saída em GeoParquet para DuckDB, CNEFE 2022 (endereços) para reverse no nível da rua, bairros do OpenStreetMap onde o IBGE não tem
 
 ## Decisões e cuidados
@@ -470,11 +496,12 @@ geo/
 - **PostGIS como warehouse e serving.** Um banco só simplifica o estudo, e é nele que estão GiST, `ST_Subdivide`, as funções de cobertura e a integração com Martin e dbt-postgres. DuckDB fica para análise ad hoc nos notebooks.
 - **Por que não usar só a API de Malhas do IBGE?** Ela entrega a geometria por código, mas não responde "ponto → município", e chamá-la a cada requisição põe a latência e a disponibilidade de terceiros no caminho. Fica como referência de comparação.
 - **GEOS ≥ 3.12 para `ST_Coverage*`.** A imagem `postgis/postgis:18-3.6` é baseada em Debian trixie (GEOS 3.13); o Debian bookworm tem GEOS 3.11, sem essas funções. Conferir com `SELECT postgis_full_version();`.
-- **Ordem `lon, lat`.** `ST_MakePoint(x, y)` é `(lon, lat)`; a API recebe `lat` e `lon` nomeados para evitar troca.
+- **Ordem `lon, lat`.** `ST_MakePoint(x, y)` é `(lon, lat)`; a biblioteca recebe `lat` e `lon` nomeados para evitar troca.
 - **WGS84 × SIRGAS 2000.** GPS entrega WGS84 (EPSG:4326) e a malha está em SIRGAS 2000 (EPSG:4674); a diferença é desprezível na escala da malha, então o ponto entra como 4674 (`ST_SetSRID`), sem reprojetar.
-- **Precisão.** A malha municipal é compatível com a escala 1:250.000: perto de uma divisa, o ponto pode cair no vizinho. Documentar na API e avisar quando o ponto estiver a poucas centenas de metros da divisa.
-- **Edição em tudo.** `edicao` faz parte da chave de todo modelo; consultas históricas passam `?edicao=`.
-- **Atribuição.** Dados públicos do IBGE; citar a fonte nas respostas e no mapa.
+- **Precisão.** A malha municipal é compatível com a escala 1:250.000: perto de uma divisa, o ponto pode cair no vizinho. Documentar na biblioteca e avisar quando o ponto estiver a poucas centenas de metros da divisa.
+- **Edição em tudo.** `edicao` faz parte da chave de todo modelo; consultas históricas passam `edicao=`.
+- **Biblioteca em vez de API HTTP.** O consumo é Python (notebooks e scripts); um FastAPI só acrescentaria serialização, deploy e latência. Se surgir outro consumidor, a API vira uma casca fina sobre `geoibge`.
+- **Atribuição.** Dados públicos do IBGE; citar a fonte nos resultados e nos mapas.
 
 ## Referências
 

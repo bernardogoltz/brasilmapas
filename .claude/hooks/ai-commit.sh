@@ -9,7 +9,7 @@ Regras: Conventional Commits em português; título <tipo>(escopo): resumo imper
 
 $(git diff --cached --stat)
 
-$(git diff --cached | head -c 60000)"
+$(git diff --cached -- . ":!uv.lock" | head -c 60000 || true)"
 
 msg=$(AUTO_COMMIT_NESTED=1 claude -p --model claude-sonnet-5-5 --effort low <<<"$prompt")
 [ -n "$msg" ] || { echo "mensagem vazia" >&2; exit 1; }

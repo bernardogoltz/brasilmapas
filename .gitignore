@@ -1,2 +1,5 @@
 # Shapefiles IBGE (~520MB), baixar do site do IBGE
 data/
+
+# Segredos locais
+.env
