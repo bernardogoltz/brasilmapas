@@ -10,6 +10,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import numpy as np  # noqa: E402
 import pytest  # noqa: E402
+from matplotlib.collections import PathCollection  # noqa: E402
 from matplotlib.patches import PathPatch  # noqa: E402
 
 _spec = importlib.util.spec_from_file_location("plots", Path(__file__).parents[1] / "scripts" / "plots.py")
@@ -61,7 +62,8 @@ def test_plotar_com_varias_ufs_e_titulo_proprio():
     fig, _ = pl.plotar(["2605459", "5300108"], titulo="Noronha e DF")
     ax = fig.axes[0]
     assert ax.get_title().startswith("Noronha e DF · 2 UFs · ")
-    assert len(ax.collections[-1].get_offsets()) == 1  # Noronha, pequeno: ganha círculo; Brasília não
+    circulos = [c for c in ax.collections if type(c) is PathCollection]  # só o scatter
+    assert len(circulos) == 1 and len(circulos[0].get_offsets()) == 1  # Noronha, pequeno: ganha círculo; Brasília não
 
 
 def test_plotar_serie_vazia():
@@ -86,3 +88,28 @@ def test_main_codigo_invalido_sai_com_2(tmp_path):
 def test_galeria_so_tem_codigos_validos():
     for titulo, codigos in pl.GALERIA.values():
         assert sum(map(len, pl.agrupar(codigos).values())) == len(codigos), titulo
+
+
+def test_plotar_mede_a_frio(monkeypatch):
+    pl.agrupar(["5300108"])  # aquece o cache
+    limpos = []
+    for nome in ("_uf", "_indice"):
+        cache = getattr(pl.desenho, nome)
+        monkeypatch.setattr(cache, "cache_clear", lambda c=cache, n=nome: (limpos.append(n), type(c).cache_clear(c)))
+    pl.plotar(["5300108"])
+    assert sorted(limpos) == ["_indice", "_uf"]
+
+
+def test_svg_repetivel_salvo_o_tempo(tmp_path):
+    textos = []
+    for i in range(2):
+        pl.salvar(pl.plotar(["5300108"], titulo="DF")[0], tmp_path / f"{i}.svg")
+        textos.append(re.sub(r"[\d.]+ ms", "", (tmp_path / f"{i}.svg").read_text()))
+    ids = re.findall(r'clip-path="url\(#(\w+)\)"', textos[0])
+    assert ids and ids == re.findall(r'clip-path="url\(#(\w+)\)"', textos[1])
+
+
+def test_main_recusa_saida_sem_codigos(tmp_path, capsys):
+    with pytest.raises(SystemExit) as saida:
+        pl.main(["-o", str(tmp_path / "x.svg")])
+    assert saida.value.code == 2 and "pedem códigos" in capsys.readouterr().err

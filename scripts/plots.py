@@ -6,7 +6,7 @@
 
 Desenha as UFs que a série toca (todos os municípios ao fundo, a série em destaque), a partir dos GeoJSON por UF
 (`src/geoibge/mapas/`), sem banco nem rede. O título traz o tempo de execução: resolver os códigos, ler as UFs e
-montar o desenho (o `savefig` fica de fora, ele roda depois do título).
+montar o desenho, sempre a frio (cache das UFs limpo antes); o `savefig` fica de fora, ele roda depois do título.
 
     uv run scripts/plots.py 3550308 3518800 431490 -o rmsp.svg   # ou: make plots CODS="3550308 3518800"
     uv run scripts/plots.py                                       # regera a galeria do README em docs/img/
@@ -75,10 +75,13 @@ def plotar(codigos, titulo: str | None = None, largura_pol: float = 6.0):
     import matplotlib
 
     matplotlib.use("Agg")
+    matplotlib.rcParams["svg.hashsalt"] = "geoibge"  # ids de clip-path fixos entre execuções
     import matplotlib.pyplot as plt
     from matplotlib.collections import PatchCollection
     from matplotlib.patches import PathPatch
 
+    for cache in (desenho._uf, desenho._indice):  # a frio: o tempo não depende das séries anteriores
+        cache.cache_clear()
     t0 = time.perf_counter()
     por_uf = agrupar(codigos)
     if not por_uf:
@@ -140,7 +143,7 @@ def salvar(fig, destino: Path) -> Path:
 
     destino = Path(destino)
     destino.parent.mkdir(parents=True, exist_ok=True)
-    # sem data: o SVG só muda quando o desenho (ou o tempo do título) muda
+    # sem data e com hashsalt fixo: o SVG só muda quando o desenho (ou o tempo do título) muda
     fig.savefig(destino, format="svg", dpi=DPI, bbox_inches="tight", metadata={"Date": None})
     plt.close(fig)
     return destino
@@ -155,6 +158,8 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("-o", "--saida", type=Path, help="SVG de saída (padrão: data/mapas/plot.svg)")
     parser.add_argument("-t", "--titulo", help="início do título (o tempo vem depois)")
     args = parser.parse_args(argv)
+    if not args.codigos and (args.saida or args.titulo):
+        parser.error("-o e -t pedem códigos; sem códigos, o script regera a galeria em docs/img/")
     console = Console(highlight=False)
 
     if args.codigos:
