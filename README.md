@@ -23,6 +23,7 @@ Tudo passa pelo `make` (requer Docker e `uv`). `make` sozinho lista os comandos.
 | `make mapas` | regera `src/geoibge/mapas/{cd_uf}.json` (GeoJSON por UF, simplificado na escala da UF) a partir dos marts, e o `data/mapas.json` |
 | `make mapas-json` | regera `data/mapas.json` (paths SVG prontos de todas as UFs, para uso externo) a partir dos GeoJSON, sem banco |
 | `make mapa` | SVG da UF com o município em destaque, sem banco: `COD=3550308` ou `CEP=01310-100`; grava em `data/mapas/` |
+| `make exemplos` | regera os mapas e o print de tempos do README em `docs/img/` (banco gold × GeoJSON × `mapas.json`) |
 | `make explorador` | app `05_explorador.py`: UF → mapa, clique → `reverse()` |
 | `make simplificacao` | abre `02_simplificacao.py` (tolerância × tamanho × frestas) |
 | `make benchmark` | abre `03_benchmark_reverse.py` (latência e lote do `reverse()`) |
@@ -54,6 +55,57 @@ Endereços com as portas padrão do `.env.example`.
 Papéis do banco `geo`: `loader`, `transformer`, `api_reader`, `monitor` (senhas no `.env`). Os serviços Airflow só sobem com o profile `airflow` (`make airflow`); o Martin, com o `core` (`make tiles`); a observabilidade, com o `obs` (`make obs`).
 
 A biblioteca `geoibge` conecta por `GEOIBGE_DSN` (padrão `postgresql://api_reader:api_reader@localhost:5432/geo`).
+
+## Exemplos: código IBGE → mapa
+
+O código IBGE do município (7 dígitos, ou 6) basta: os 2 primeiros dão a UF, o resto marca o município no desenho. Sem banco, sem rede.
+
+```python
+import geoibge as gi
+
+gi.svg(3550308)                  # SVG de SP com São Paulo em destaque
+gi.svg("431490", largura=800)    # código de 6 dígitos: Porto Alegre
+gi.mapa(cep="01310-100")         # CEP → código (ViaCEP) → GeoJSON da UF
+```
+
+```sh
+uv run geoibge mapa 2605459 -o noronha.svg   # ou: make mapa COD=2605459
+```
+
+<table>
+<tr>
+<td align="center"><img src="docs/img/3550308.svg" width="260"><br><code>3550308</code> São Paulo (SP)</td>
+<td align="center"><img src="docs/img/4314902.svg" width="260"><br><code>4314902</code> Porto Alegre (RS), lagoas em azul</td>
+<td align="center"><img src="docs/img/1302603.svg" width="260"><br><code>1302603</code> Manaus (AM)</td>
+</tr>
+<tr>
+<td align="center"><img src="docs/img/3106200.svg" width="260"><br><code>3106200</code> Belo Horizonte (MG)</td>
+<td align="center"><img src="docs/img/2927408.svg" width="260"><br><code>2927408</code> Salvador (BA)</td>
+<td align="center"><img src="docs/img/2605459.svg" width="260"><br><code>2605459</code> Fernando de Noronha (PE), pequeno: ganha círculo</td>
+</tr>
+</table>
+
+### Tempo: banco (gold) × GeoJSON × `mapas.json`
+
+O mesmo desenho por três caminhos. No banco, uma consulta aos marts por pedido (`geo_uf` + `geo_municipio.geom_media`, projetados com `ST_Affine` e convertidos com `ST_AsSVG`); nos arquivos, o GeoJSON por UF (`geoibge.svg()`) ou os paths prontos de `data/mapas.json`.
+
+<table>
+<tr>
+<td align="center"><img src="docs/img/3550308_banco.svg" width="300"><br>banco (gold): 2 MB de SVG, malha média sem simplificar</td>
+<td align="center"><img src="docs/img/3550308.svg" width="300"><br>JSON: 292 KB, simplificado na escala da UF</td>
+</tr>
+</table>
+
+![Tempos por caminho, saída do make exemplos](docs/img/tempos.svg)
+
+| Código | Município | Mun. na UF | Banco (gold) | GeoJSON 1ª vez | GeoJSON com cache | `mapas.json` |
+|---|---|--:|--:|--:|--:|--:|
+| `3550308` | São Paulo (SP) | 645 | 23 ms | 23 ms | 0,02 ms | 0,07 ms |
+| `3106200` | Belo Horizonte (MG) | 853 | 43 ms | 30 ms | 0,02 ms | 0,09 ms |
+| `1302603` | Manaus (AM) | 62 | 15 ms | 8 ms | 0,01 ms | 0,01 ms |
+| `5300108` | Brasília (DF) | 1 | 0,9 ms | 0,9 ms | 0,01 ms | < 0,01 ms |
+
+Mediana numa máquina local, malha 2025, conexão já aberta. O banco paga a consulta a cada pedido e devolve até 15× mais bytes; o GeoJSON paga só a 1ª leitura da UF; o `mapas.json` carrega todas as UFs uma vez (~15 ms) e cada desenho vira concatenação de strings. `make exemplos` regera as imagens e os tempos (precisa do banco no ar).
 
 ## Objetivo
 
@@ -530,7 +582,8 @@ geo/
 ├── docker-compose.yml
 ├── .env.example
 ├── Makefile                      # comandos do projeto (make help)
-├── scripts/status.py             # painel do make status (rich)
+├── scripts/                      # status.py (make status), exemplos.py (make exemplos); rich
+├── docs/img/                     # mapas e print de tempos do README (make exemplos)
 ├── pyproject.toml                # uv: geoibge, marimo, geopandas, psycopg, lonboard
 ├── airflow/
 │   ├── Dockerfile                # Airflow + GDAL + tippecanoe + venv do dbt

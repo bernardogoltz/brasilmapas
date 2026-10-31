@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help up down status notebook test airflow dags-check carregar localidades censo dbt transformar tiles validar mapas mapas-json mapa explorador simplificacao benchmark obs tour
+.PHONY: help up down status notebook test airflow dags-check carregar localidades censo dbt transformar tiles validar mapas mapas-json mapa exemplos explorador simplificacao benchmark obs tour
 
 help: ## lista os comandos
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36mmake %-12s\033[0m %s\n", $$1, $$2}'
@@ -50,6 +50,9 @@ mapas-json: ## regera data/mapas.json (paths SVG prontos, para uso externo) a pa
 
 mapa: ## SVG da UF com o município em destaque; COD=3550308 ou CEP=01310-100 (sem banco)
 	uv run geoibge mapa $(COD) $(if $(CEP),--cep $(CEP)) -o data/mapas/$(or $(COD),$(CEP)).svg
+
+exemplos: ## regera os mapas e o print de tempos do README (docs/img/): banco gold × GeoJSON × mapas.json
+	@uv run --quiet scripts/exemplos.py
 
 explorador: ## app do explorador: UF → mapa, clique → reverse() (marimo run)
 	uv run marimo run notebooks/05_explorador.py
