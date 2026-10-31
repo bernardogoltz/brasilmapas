@@ -12,3 +12,6 @@ __pycache__/
 dbt/target/
 dbt/logs/
 dbt/dbt_packages/
+
+# marimo (cache de sessão)
+__marimo__/
