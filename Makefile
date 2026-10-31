@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help up down status notebook test airflow dags-check carregar localidades dbt transformar
+.PHONY: help up down status notebook test airflow dags-check carregar localidades dbt transformar tiles validar explorador simplificacao benchmark
 
 help: ## lista os comandos
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36mmake %-12s\033[0m %s\n", $$1, $$2}'
@@ -31,6 +31,21 @@ dbt: ## dbt build local (staging → marts) contra o banco do compose
 
 transformar: ## dispara a DAG dbt_geo (Cosmos) no Airflow
 	$(COMPOSE) exec airflow-apiserver airflow dags trigger dbt_geo
+
+tiles: .env ## sobe o Martin (vector tiles em localhost:3001)
+	$(COMPOSE) --profile core up -d --wait martin
+
+validar: ## valida UFs/municípios com o geoibge; IDS="SP RJ 3550308"
+	uv run geoibge validar $(or $(IDS),SP RJ 3550308)
+
+explorador: ## app do explorador: UF → mapa, clique → reverse() (marimo run)
+	uv run marimo run notebooks/05_explorador.py
+
+simplificacao: ## notebook de calibração da simplificação (marimo)
+	uv run marimo edit notebooks/02_simplificacao.py
+
+benchmark: ## notebook de benchmark do reverse() (marimo)
+	uv run marimo edit notebooks/03_benchmark_reverse.py
 
 down: ## para os containers (mantém os dados)
 	$(COMPOSE) --profile '*' down

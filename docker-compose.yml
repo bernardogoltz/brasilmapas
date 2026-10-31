@@ -54,6 +54,26 @@ services:
       timeout: 5s
       retries: 20
 
+  martin:
+    image: ghcr.io/maplibre/martin:1.16.0
+    profiles: [core]
+    restart: unless-stopped
+    command: ["--config", "/config/martin.yaml"]
+    environment:
+      DATABASE_URL: postgresql://api_reader:${API_READER_PASSWORD}@postgis:5432/geo
+    ports:
+      - "${MARTIN_PORT:-3001}:3000"
+    volumes:
+      - ./tiles/martin.yaml:/config/martin.yaml:ro,z
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    depends_on:
+      postgis:
+        condition: service_healthy
+
   airflow-init:
     <<: *airflow
     command: ["bash", "-c", "airflow db migrate"]

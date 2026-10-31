@@ -17,6 +17,11 @@ Tudo passa pelo `make` (requer Docker e `uv`). `make` sozinho lista os comandos.
 | `make localidades` | dispara `ibge_localidades` |
 | `make dbt` | `dbt build` local (staging → marts + testes) contra o banco do compose |
 | `make transformar` | dispara `dbt_geo` (Cosmos) no Airflow; também roda sozinha quando a ingestão atualiza um asset |
+| `make tiles` | sobe o Martin com municípios e UFs como vector tiles (`localhost:3001`) |
+| `make validar` | valida UFs e municípios com o `geoibge`; `IDS="SP 3550308"` |
+| `make explorador` | app `05_explorador.py`: UF → mapa, clique → `reverse()` |
+| `make simplificacao` | abre `02_simplificacao.py` (tolerância × tamanho × frestas) |
+| `make benchmark` | abre `03_benchmark_reverse.py` (latência e lote do `reverse()`) |
 | `make down` | para os containers de todos os profiles (os dados ficam no volume) |
 | `make status` | serviços: estado, porta, uptime, CPU e memória |
 | `make notebook` | abre `01_explorar_fontes.py` no marimo (baixa a malha da UF escolhida) |
@@ -33,9 +38,12 @@ Endereços com as portas padrão do `.env.example`.
 | Airflow scheduler | `airflow-scheduler` | interno (health em `:8974`) | — |
 | Airflow DAG processor | `airflow-dag-processor` | interno | — |
 | Airflow triggerer | `airflow-triggerer` | interno | — |
+| Martin (vector tiles) | `martin` | http://localhost:3001/catalog (`MARTIN_PORT`) | camadas `municipios` e `ufs`; papel `api_reader` |
 | marimo | local (`make notebook`) | http://localhost:2718 | token na URL impressa |
 
-Papéis do banco `geo`: `loader`, `transformer`, `api_reader` (senhas no `.env`). Os serviços Airflow só sobem com o profile `airflow` (`make airflow`).
+Papéis do banco `geo`: `loader`, `transformer`, `api_reader` (senhas no `.env`). Os serviços Airflow só sobem com o profile `airflow` (`make airflow`); o Martin, com o `core` (`make tiles`).
+
+A biblioteca `geoibge` conecta por `GEOIBGE_DSN` (padrão `postgresql://api_reader:api_reader@localhost:5432/geo`).
 
 ## Objetivo
 
@@ -495,9 +503,11 @@ geo/
 - [x] Cosmos + asset ligando ingestão → dbt (`dbt_geo`)
 
 **Fase 3 — Serving**
-- [ ] `geoibge`: `ufs()`, `municipios()`, `validar()` e `reverse()` (até município)
-- [ ] Martin + `05_explorador.py`
-- [ ] `02_simplificacao.py` e `03_benchmark_reverse.py` para calibrar resoluções e validar as metas
+- [x] `geoibge`: `ufs()`, `municipios()`, `validar()` e `reverse()` (até município), sobre `lkp_municipio` e `meta.publicacao`
+- [x] Martin + `05_explorador.py`
+- [x] `02_simplificacao.py` e `03_benchmark_reverse.py` para calibrar resoluções e validar as metas
+
+  Medido em 30/10/2026 (malha 2025, local): `reverse()` p95 4,5 ms; lote de 100 mil pontos em 2,8 s; `municipios()` de um código p95 5 ms; validação de MG (853) em 1,7 s. Tolerâncias mantidas: no RJ, 0,001° reduz o GeoJSON de 8,9 MB para 649 KB (desvio máx. 0,3 km) e 0,01° para 121 KB (3,2 km), sem fresta; a simplificação ingênua abre 90 arestas inválidas.
 
 **Fase 4 — Intramunicipal**
 - [ ] DAG do Censo 2022: setores, bairros, distritos e subdistritos

@@ -1,0 +1,22 @@
+# Martin: vector tiles direto dos marts (papel api_reader), na resolução média.
+# Todas as edições vão no tile: filtre por `edicao` no cliente (QGIS/MapLibre).
+# Sem id_column: o MVT exige id inteiro e cd_mun é texto.
+listen_addresses: "0.0.0.0:3000"
+postgres:
+  connection_string: ${DATABASE_URL}
+  auto_publish: false
+  tables:
+    municipios:
+      schema: marts
+      table: geo_municipio
+      srid: 4674
+      geometry_column: geom_media
+      geometry_type: MULTIPOLYGON
+      properties: {edicao: int4, cd_mun: text, sg_uf: text}
+    ufs:
+      schema: marts
+      table: geo_uf
+      srid: 4674
+      geometry_column: geom_media
+      geometry_type: MULTIPOLYGON
+      properties: {edicao: int4, cd_uf: text, sg_uf: text, nm_uf: text}

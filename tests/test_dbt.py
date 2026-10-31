@@ -31,7 +31,8 @@ def test_modelos_por_camada(manifest):
     esperado = {
         "staging": {"stg_ibge__municipios", "stg_ibge__localidades_municipios", "stg_ibge__localidades_estados"},
         "intermediate": {"int_municipios__geom_valida", "int_municipios__hierarquia", "int_municipios__simplificado"},
-        "marts": {"dim_municipio", "geo_municipio", "geo_uf"},
+        "marts": {"dim_municipio", "geo_municipio", "geo_uf", "lkp_municipio"},
+        "meta": {"publicacao"},
     }
     modelos = _modelos(manifest)
     for schema, nomes in esperado.items():
@@ -49,6 +50,7 @@ def test_marts_tem_testes_de_chave_e_geometria(manifest):
     assert {"chave_unica", "geometria_valida", "srid"} <= por_modelo["geo_uf"]
     assert {"assert_contagem_municipios_api", "assert_cobertura_api_localidades"} <= por_modelo["dim_municipio"]
     assert "assert_simplificacao_nao_piora_cobertura" in por_modelo["geo_municipio"]
+    assert {"geometria_valida", "srid", "assert_lkp_cobre_ponto_interno"} <= por_modelo["lkp_municipio"]
 
 
 def test_seed_areas_operacionais():

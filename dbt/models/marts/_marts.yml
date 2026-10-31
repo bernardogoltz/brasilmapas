@@ -51,3 +51,15 @@ models:
         data_tests: [geometria_valida, srid]
       - name: geom_baixa
         data_tests: [geometria_valida, srid]
+
+  - name: lkp_municipio
+    description: Municípios subdivididos (ST_Subdivide 256) para o reverse().
+    columns:
+      - name: geom
+        data_tests: [geometria_valida, srid]
+
+  - name: publicacao
+    description: Edição publicada (uma linha).
+    columns:
+      - name: edicao
+        data_tests: [not_null, unique]
