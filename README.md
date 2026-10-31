@@ -2,7 +2,7 @@
 
 Projeto de estudo de engenharia de dados: um pipeline que ingere as malhas territoriais do IBGE, modela com **dbt**, orquestra com **Airflow**, explora com **marimo**, monitora com **Grafana** e entrega os dados numa **biblioteca Python** — tudo local com **Docker Compose**.
 
-> **Status: fases 0 a 4 implementadas** (ingestão, dbt, `geoibge`, Martin e Censo 2022 intramunicipal); observabilidade e extras pendentes. Caminhos, colunas e contagens das fontes foram conferidos direto no IBGE em 30/10/2026.
+> **Status: fases 0 a 5 implementadas** (ingestão, dbt, `geoibge`, Martin, Censo 2022 intramunicipal e observabilidade com Grafana); pendentes: elementary e alertas. Caminhos, colunas e contagens das fontes foram conferidos direto no IBGE em 30/10/2026.
 
 ## Comandos
 
@@ -23,6 +23,8 @@ Tudo passa pelo `make` (requer Docker e `uv`). `make` sozinho lista os comandos.
 | `make explorador` | app `05_explorador.py`: UF → mapa, clique → `reverse()` |
 | `make simplificacao` | abre `02_simplificacao.py` (tolerância × tamanho × frestas) |
 | `make benchmark` | abre `03_benchmark_reverse.py` (latência e lote do `reverse()`) |
+| `make obs` | sobe Prometheus, exporters e Grafana (`localhost:3000`) e garante o papel `monitor` |
+| `make tour` | abre `06_tour.py`: tour final da `geoibge`, do dado ao mapa |
 | `make down` | para os containers de todos os profiles (os dados ficam no volume) |
 | `make status` | serviços: estado, porta, uptime, CPU e memória |
 | `make notebook` | abre `01_explorar_fontes.py` no marimo (baixa a malha da UF escolhida) |
@@ -40,9 +42,13 @@ Endereços com as portas padrão do `.env.example`.
 | Airflow DAG processor | `airflow-dag-processor` | interno | — |
 | Airflow triggerer | `airflow-triggerer` | interno | — |
 | Martin (vector tiles) | `martin` | http://localhost:3001/catalog (`MARTIN_PORT`) | camadas `municipios` e `ufs`; papel `api_reader` |
+| Grafana | `grafana` | http://localhost:3000 (`GRAFANA_PORT`) | sem login; dashboards Pipeline, Qualidade e Banco |
+| Prometheus | `prometheus` | http://localhost:9090 (`PROMETHEUS_PORT`) | — |
+| StatsD exporter | `statsd-exporter` | `localhost:9102` (UDP 9125 interno) | recebe as métricas do Airflow |
+| Postgres exporter | `postgres-exporter` | `localhost:9187` | papel `monitor` |
 | marimo | local (`make notebook`) | http://localhost:2718 | token na URL impressa |
 
-Papéis do banco `geo`: `loader`, `transformer`, `api_reader` (senhas no `.env`). Os serviços Airflow só sobem com o profile `airflow` (`make airflow`); o Martin, com o `core` (`make tiles`).
+Papéis do banco `geo`: `loader`, `transformer`, `api_reader`, `monitor` (senhas no `.env`). Os serviços Airflow só sobem com o profile `airflow` (`make airflow`); o Martin, com o `core` (`make tiles`); a observabilidade, com o `obs` (`make obs`).
 
 A biblioteca `geoibge` conecta por `GEOIBGE_DSN` (padrão `postgresql://api_reader:api_reader@localhost:5432/geo`).
 
@@ -404,7 +410,7 @@ Coleta:
 
 - **Airflow** → StatsD (`AIRFLOW__METRICS__STATSD_ON=True`) → `statsd-exporter` → Prometheus: duração e status dos DAG runs, falhas de task, erros de import, heartbeat do scheduler.
 - **PostgreSQL** → `postgres-exporter` + `pg_stat_statements`: conexões, cache hit, consultas lentas.
-- **Qualidade** → tabelas do elementary, `meta.cargas` e `obs.*`, lidas direto pelo datasource PostgreSQL do Grafana.
+- **Qualidade** → `meta.cargas`, `obs.*` e `marts.*`, lidas direto pelo datasource PostgreSQL do Grafana (papel `monitor`). Elementary ainda não integrado.
 
 Dashboards, provisionados como código em `infra/grafana/`:
 
@@ -413,7 +419,9 @@ Dashboards, provisionados como código em `infra/grafana/`:
 3. **Banco:** conexões, cache hit ratio, consultas mais caras.
 4. **Consultas da biblioteca:** latência das consultas de `reverse()` e `validar()` via `pg_stat_statements`.
 
-Alertas: DAG falhou; teste do dbt com `error`; edição nova detectada (informativo).
+Implementado em `infra/`: `prometheus/prometheus.yml`, `statsd/mapping.yml` (dag_id/task_id/state viram labels), `grafana/provisioning/` (datasources `prometheus` e `geo-pg`) e `grafana/dashboards/*.json`. O papel `monitor` (`pg_monitor` + leitura de `meta`, `obs`, `marts`) é criado por `infra/postgres/init/02_monitor.sh`, que o `make obs` reaplica em volumes antigos.
+
+Alertas (pendente): DAG falhou; teste do dbt com `error`; edição nova detectada (informativo).
 
 ## Notebooks (marimo)
 
@@ -426,6 +434,7 @@ Arquivos `.py` em `notebooks/`, abertos com `uv run marimo edit notebooks/<arqui
 | `03_benchmark_reverse.py` | 100 mil pontos aleatórios: polígono inteiro × `ST_Subdivide` × H3; latência e `EXPLAIN ANALYZE` |
 | `04_qa_edicao.py` | diff entre edições: municípios novos, removidos e com limite alterado (`ST_SymDifference`) |
 | `05_explorador.py` | app (`marimo run`): UF → município → mapa; clique → `geoibge.reverse()` |
+| `06_tour.py` | exemplo final: edições e cargas, `ufs()`, `municipios()`, `reverse()` em lote, mapa, `validar()` e links dos dashboards |
 
 ## Ambiente local (Docker Compose)
 

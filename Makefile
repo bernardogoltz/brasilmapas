@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help up down status notebook test airflow dags-check carregar localidades censo dbt transformar tiles validar explorador simplificacao benchmark
+.PHONY: help up down status notebook test airflow dags-check carregar localidades censo dbt transformar tiles validar explorador simplificacao benchmark obs tour
 
 help: ## lista os comandos
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36mmake %-12s\033[0m %s\n", $$1, $$2}'
@@ -49,6 +49,15 @@ simplificacao: ## notebook de calibração da simplificação (marimo)
 
 benchmark: ## notebook de benchmark do reverse() (marimo)
 	uv run marimo edit notebooks/03_benchmark_reverse.py
+
+obs: .env ## sobe Prometheus, exporters e Grafana (localhost:3000) e garante o papel monitor
+	$(COMPOSE) up -d --wait postgis
+	$(COMPOSE) exec -T postgis bash /docker-entrypoint-initdb.d/02_monitor.sh
+	$(COMPOSE) --profile obs up -d --wait
+	@$(MAKE) --no-print-directory status
+
+tour: ## notebook final: tour da geoibge, do dado ao mapa (marimo)
+	uv run marimo edit notebooks/06_tour.py
 
 down: ## para os containers (mantém os dados)
 	$(COMPOSE) --profile '*' down

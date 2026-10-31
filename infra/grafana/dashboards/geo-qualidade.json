@@ -1,0 +1,145 @@
+{
+  "uid": "geo-qualidade",
+  "title": "geo · Qualidade",
+  "tags": [
+    "geo"
+  ],
+  "schemaVersion": 41,
+  "version": 1,
+  "editable": false,
+  "refresh": "5m",
+  "time": {
+    "from": "now-7d",
+    "to": "now"
+  },
+  "panels": [
+    {
+      "type": "barchart",
+      "title": "Municípios por edição",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "geo-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "geo-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "select edicao::text, count(*) filter (where is_municipio) as municipios, count(*) filter (where not is_municipio) as outros\nfrom marts.dim_municipio group by edicao order by edicao"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1
+    },
+    {
+      "type": "barchart",
+      "title": "Setores 2022 em outro município (%)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "geo-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "geo-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "select edicao::text, pct_divergentes from obs.obs_divergencia_setores order by edicao"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2
+    },
+    {
+      "type": "table",
+      "title": "Divergência setores 2022 × malha",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "geo-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "geo-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "select edicao, n_setores, n_divergentes, n_fora_da_malha, pct_divergentes, medido_em from obs.obs_divergencia_setores order by edicao"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3
+    },
+    {
+      "type": "table",
+      "title": "Geometrias inválidas (resolução média)",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "geo-pg"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "geo-pg"
+          },
+          "rawQuery": true,
+          "editorMode": "code",
+          "format": "table",
+          "rawSql": "select g.edicao, count(*) filter (where not st_isvalid(g.geom_media)) as invalidas, count(*) as total\nfrom marts.geo_municipio g group by g.edicao order by g.edicao"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {},
+        "overrides": []
+      },
+      "gridPos": {
+        "w": 12,
+        "h": 8,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4
+    }
+  ]
+}

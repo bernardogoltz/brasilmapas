@@ -19,6 +19,11 @@ x-airflow: &airflow
     DBT_PORT: 5432
     TRANSFORMER_PASSWORD: ${TRANSFORMER_PASSWORD}
     PYTHONPATH: /opt/airflow/include
+    # métricas → statsd-exporter (profile obs); sem ele os pacotes UDP só se perdem
+    AIRFLOW__METRICS__STATSD_ON: "True"
+    AIRFLOW__METRICS__STATSD_HOST: statsd-exporter
+    AIRFLOW__METRICS__STATSD_PORT: 9125
+    AIRFLOW__METRICS__STATSD_PREFIX: airflow
   volumes:
     - ./airflow/dags:/opt/airflow/dags:z
     - ./airflow/include:/opt/airflow/include:z
@@ -39,6 +44,7 @@ services:
       LOADER_PASSWORD: ${LOADER_PASSWORD}
       TRANSFORMER_PASSWORD: ${TRANSFORMER_PASSWORD}
       API_READER_PASSWORD: ${API_READER_PASSWORD}
+      MONITOR_PASSWORD: ${MONITOR_PASSWORD:-monitor}
     command: >
       postgres
       -c shared_preload_libraries=pg_stat_statements
@@ -124,5 +130,70 @@ services:
     restart: unless-stopped
     depends_on: *depois-do-init
 
+  statsd-exporter:
+    image: prom/statsd-exporter:v0.28.0
+    profiles: [obs]
+    restart: unless-stopped
+    command: ["--statsd.mapping-config=/config/mapping.yml"]
+    ports:
+      - "${STATSD_EXPORTER_PORT:-9102}:9102"
+    volumes:
+      - ./infra/statsd/mapping.yml:/config/mapping.yml:ro,z
+
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:v0.18.1
+    profiles: [obs]
+    restart: unless-stopped
+    command: ["--collector.stat_statements"]
+    environment:
+      DATA_SOURCE_URI: postgis:5432/geo?sslmode=disable
+      DATA_SOURCE_USER: monitor
+      DATA_SOURCE_PASS: ${MONITOR_PASSWORD:-monitor}
+    ports:
+      - "${POSTGRES_EXPORTER_PORT:-9187}:9187"
+    depends_on:
+      postgis:
+        condition: service_healthy
+
+  prometheus:
+    image: prom/prometheus:v3.7.3
+    profiles: [obs]
+    restart: unless-stopped
+    ports:
+      - "${PROMETHEUS_PORT:-9090}:9090"
+    volumes:
+      - ./infra/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro,z
+      - promdata:/prometheus
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:9090/-/ready"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  grafana:
+    image: grafana/grafana:13.3.0
+    profiles: [obs]
+    restart: unless-stopped
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH: /var/lib/grafana/dashboards/geo-pipeline.json
+      MONITOR_PASSWORD: ${MONITOR_PASSWORD:-monitor}
+    ports:
+      - "${GRAFANA_PORT:-3000}:3000"
+    volumes:
+      - ./infra/grafana/provisioning:/etc/grafana/provisioning:ro,z
+      - ./infra/grafana/dashboards:/var/lib/grafana/dashboards:ro,z
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:3000/api/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 30
+    depends_on:
+      prometheus:
+        condition: service_healthy
+
 volumes:
   pgdata:
+  promdata:
