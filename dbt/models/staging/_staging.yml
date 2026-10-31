@@ -24,3 +24,35 @@ models:
         data_tests: [unique, not_null]
       - name: sg_uf
         data_tests: [unique, not_null]
+
+  - name: stg_ibge__setores_2022
+    columns:
+      - name: cd_setor
+        data_tests: [unique, not_null]
+      - name: cd_mun
+        data_tests: [not_null]
+      - name: cd_dist
+        data_tests:
+          - not_null:
+              config: {where: "cd_mun not in ('4300001', '4300002')"}  # lagoas: áreas operacionais, sem distrito
+      - name: cd_subdist
+        data_tests:
+          - not_null:
+              config: {where: "cd_mun not in ('4300001', '4300002')"}  # lagoas: áreas operacionais, sem distrito
+      - name: geom
+        data_tests: [srid]
+
+  - name: stg_ibge__bairros_2022
+    columns:
+      - name: cd_bairro
+        data_tests: [unique, not_null]
+
+  - name: stg_ibge__distritos_2022
+    columns:
+      - name: cd_dist
+        data_tests: [unique, not_null]
+
+  - name: stg_ibge__subdistritos_2022
+    columns:
+      - name: cd_subdist
+        data_tests: [unique, not_null]

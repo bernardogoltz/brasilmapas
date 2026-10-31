@@ -63,3 +63,27 @@ models:
     columns:
       - name: edicao
         data_tests: [not_null, unique]
+
+  - name: geo_bairro
+    description: Bairros 2022 (só onde o IBGE tem malha de bairros).
+    columns:
+      - name: cd_bairro
+        data_tests: [unique, not_null]
+      - name: geom
+        data_tests: [geometria_valida, srid]
+
+  - name: geo_distrito
+    description: Distritos 2022.
+    columns:
+      - name: cd_dist
+        data_tests: [unique, not_null]
+      - name: geom
+        data_tests: [geometria_valida, srid]
+
+  - name: lkp_setor
+    description: Setores 2022 subdivididos (ST_Subdivide 256) com distrito, subdistrito, bairro e situação.
+    columns:
+      - name: cd_setor
+        data_tests: [not_null]
+      - name: geom
+        data_tests: [geometria_valida, srid]

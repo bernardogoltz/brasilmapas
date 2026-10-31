@@ -239,7 +239,7 @@ with p as (
     select id, st_setsrid(st_makepoint(lon, lat), 4674) as geom
     from unnest(%(ids)s::int[], %(lons)s::float8[], %(lats)s::float8[]) as t(id, lon, lat)
 )
-select p.id, coalesce(m.cd_mun, n.cd_mun) as cd_mun, m.cd_mun is null and n.cd_mun is not null as proximo
+select p.id, coalesce(m.cd_mun, n.cd_mun) as cd_mun, m.cd_mun is null and n.cd_mun is not null as proximo{colunas_setor}
 from p
 left join lateral (
     select l.cd_mun from marts.lkp_municipio l
@@ -256,20 +256,62 @@ left join lateral (
     order by l.geom <-> p.geom
     limit 1
 ) n on true
+{setor}
 """
+
+# Hierarquia intramunicipal do Censo 2022: sem filtro de edição (dado único)
+SQL_REVERSE_SETOR = """
+left join lateral (
+    select l.cd_setor, l.situacao, l.cd_mun as cd_mun_setor, l.cd_dist, l.nm_dist,
+           l.cd_subdist, l.nm_subdist, l.cd_bairro, l.nm_bairro, l.cd_fcu, l.nm_fcu
+    from marts.lkp_setor l
+    where st_intersects(l.geom, p.geom)
+    order by l.cd_setor
+    limit 1
+) s on true
+"""
+COLUNAS_SETOR = ["cd_setor", "situacao", "cd_mun_setor", "cd_dist", "nm_dist", "cd_subdist", "nm_subdist",
+                 "cd_bairro", "nm_bairro", "cd_fcu", "nm_fcu"]
+
+
+def _tem_setores() -> bool:
+    return _consulta("select to_regclass('marts.lkp_setor') is not null as ok").ok[0]
+
+
+def _avisos(linha) -> str | None:
+    avisos = []
+    if linha.proximo == True:  # noqa: E712 (NaN quando não há ponto válido)
+        avisos.append("fora da malha; município mais próximo até 1 km")
+    if isinstance(linha.cd_mun, str):
+        if not isinstance(linha.cd_setor, str):
+            avisos.append("sem setor 2022 no ponto")
+        else:
+            if linha.cd_mun_setor != linha.cd_mun:
+                avisos.append(f"setor 2022 é de {linha.cd_mun_setor}: a malha mudou depois do Censo")
+            if not isinstance(linha.cd_bairro, str) and isinstance(linha.cd_dist, str):
+                avisos.append("sem bairro na malha 2022; distrito informado")
+    return "; ".join(avisos) or None
+
+
+def sql_reverse(setores: bool = True) -> str:
+    """SQL do reverse(): município (edição pedida) e, se houver lkp_setor, a hierarquia do Censo 2022."""
+    if not setores:
+        return SQL_REVERSE.format(colunas_setor="", setor="")
+    return SQL_REVERSE.format(colunas_setor=", " + ", ".join(f"s.{c}" for c in COLUNAS_SETOR), setor=SQL_REVERSE_SETOR)
 
 
 def reverse(pontos, lat: str = "lat", lon: str = "lon", edicao: int | None = None) -> pd.DataFrame:
-    """Hierarquia (UF, município, regiões imediata e intermediária) de cada ponto, numa ida ao banco."""
+    """Hierarquia de cada ponto (UF, município, regiões; setor, distrito, subdistrito e bairro 2022), numa ida ao banco."""
     edicao = _edicao(edicao)
     df = normalizar_pontos(pontos, lat, lon)
     validos = df[df.erro.isna()]
-    achados = _consulta(SQL_REVERSE, {
+    achados = _consulta(sql_reverse(_tem_setores()), {
         "ids": list(range(len(validos))),
         "lons": validos.lon.tolist(),
         "lats": validos.lat.tolist(),
         "edicao": edicao,
     }) if len(validos) else pd.DataFrame(columns=["id", "cd_mun", "proximo"])
+    achados = achados.reindex(columns=[*achados.columns, *(c for c in COLUNAS_SETOR if c not in achados)])
     codigos = sorted(set(achados.cd_mun.dropna()))
     atributos = _consulta(f"""
         select d.cd_mun, d.nm_mun, d.cd_uf, d.sg_uf, d.nm_uf, d.cd_rgi, d.nm_rgi, d.cd_rgint, d.nm_rgint, d.is_municipio
@@ -278,10 +320,10 @@ def reverse(pontos, lat: str = "lat", lon: str = "lon", edicao: int | None = Non
     achados.index = validos.index[achados.id.astype(int)] if len(achados) else achados.index
     out = df.join(achados.drop(columns="id")).merge(atributos, on="cd_mun", how="left").set_axis(df.index)
     out["edicao"] = edicao
-    out["aviso"] = out.proximo.map(lambda p: "fora da malha; município mais próximo até 1 km" if p is True else None)
+    out["aviso"] = out.apply(_avisos, axis=1) if len(out) else None
     sem = out.erro.isna() & out.cd_mun.isna()
     out.loc[sem, "erro"] = "fora_do_brasil"
-    return out.drop(columns="proximo")
+    return out.drop(columns=["proximo", "cd_mun_setor"])
 
 
 def validar(gdf: gpd.GeoDataFrame) -> pd.DataFrame:

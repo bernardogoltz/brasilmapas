@@ -2,7 +2,7 @@
 
 Projeto de estudo de engenharia de dados: um pipeline que ingere as malhas territoriais do IBGE, modela com **dbt**, orquestra com **Airflow**, explora com **marimo**, monitora com **Grafana** e entrega os dados numa **biblioteca Python** — tudo local com **Docker Compose**.
 
-> **Status: planejamento.** Caminhos, colunas e contagens das fontes foram conferidos direto no IBGE em 30/10/2026. O resto é desenho a implementar.
+> **Status: fases 0 a 4 implementadas** (ingestão, dbt, `geoibge`, Martin e Censo 2022 intramunicipal); observabilidade e extras pendentes. Caminhos, colunas e contagens das fontes foram conferidos direto no IBGE em 30/10/2026.
 
 ## Comandos
 
@@ -15,6 +15,7 @@ Tudo passa pelo `make` (requer Docker e `uv`). `make` sozinho lista os comandos.
 | `make dags-check` | lista erros de import das DAGs, no container |
 | `make carregar` | dispara `ibge_malha_municipal`; `EDICAO=2019` para backfill |
 | `make localidades` | dispara `ibge_localidades` |
+| `make censo` | dispara `ibge_censo2022_intramunicipal` (setores, bairros, distritos, subdistritos); `FORCAR=1` recarrega |
 | `make dbt` | `dbt build` local (staging → marts + testes) contra o banco do compose |
 | `make transformar` | dispara `dbt_geo` (Cosmos) no Airflow; também roda sozinha quando a ingestão atualiza um asset |
 | `make tiles` | sobe o Martin com municípios e UFs como vector tiles (`localhost:3001`) |
@@ -143,7 +144,7 @@ Todas públicas, do IBGE. Abreviação: `$GEOFTP` = `https://geoftp.ibge.gov.br/
 | Edições anteriores | `$GEOFTP/malhas_municipais/municipio_{2010,2013…2024}/` | SHP zip | 5.572 em 2015, 2019 e 2022 | série histórica |
 | Setores censitários 2022 | `$GEOFTP/malhas_de_setores_censitarios__divisoes_intramunicipais/censo_2022/setores/{gpkg,shp}/{BR,UF}/` | GPKG 1,4 GB · SHP zip 738 MB | 468.099 | distrito, subdistrito, bairro, situação, favelas e comunidades urbanas |
 | Bairros 2022 | `…/censo_2022/bairros/{gpkg,shp}/BR/BR_bairros_CD2022.*` | GPKG 53 MB · SHP zip 26 MB | 17.575 bairros em 895 municípios | bairro |
-| Distritos e subdistritos 2022 | `…/censo_2022/{distritos,subdistritos}/{gpkg,shp}/{BR,UF}/` | GPKG · SHP | 10.699 distritos | geometria de distrito |
+| Distritos e subdistritos 2022 | `…/censo_2022/{distritos,subdistritos}/{gpkg,shp}/{BR,UF}/` | GPKG · SHP zip ~240 MB cada | 10.699 distritos · 11.307 subdistritos | geometria de distrito |
 | API Localidades | `https://servicodados.ibge.gov.br/api/v1/localidades/{estados,municipios,distritos,subdistritos,regioes-imediatas,regioes-intermediarias}?view=nivelado` | JSON | 27 · 5.571 · 10.751 · 646 · 510 · 133 | nomes, hierarquia, conferência de contagens |
 | API Malhas v3 | `https://servicodados.ibge.gov.br/api/v3/malhas/municipios/{id}?formato=application/vnd.geo+json&qualidade={minima,intermediaria,maxima}` | GeoJSON (SP: 1,3 KB na mínima, 25 KB na máxima) | — | referência de comparação, não fonte |
 
@@ -169,6 +170,8 @@ Todas públicas, do IBGE. Abreviação: `$GEOFTP` = `https://geoftp.ibge.gov.br/
 8. **Área diverge entre fontes.** São Paulo: `AREA_KM2` = 1.522,683 na malha e 1.521,202 na API de metadados. → comparar áreas só com tolerância.
 9. **Há polígonos gigantes.** Altamira/PA tem 159.533 km²: testar um ponto contra o polígono inteiro é caro. → `ST_Subdivide` (ver [Eficiência](#eficiência)).
 10. **A cobertura do IBGE não é perfeita.** A malha 2025 tem 19 arestas inválidas (`ST_CoverageInvalidEdges`, frestas e sobreposições entre vizinhos) e a união por UF sai inválida em AC, PI e CE. → teste de cobertura como aviso; a simplificação não pode piorar a contagem; a geometria da UF passa por `ST_MakeValid`.
+11. **As lagoas não têm distrito.** Nos setores 2022, os dois setores das lagoas Mirim e dos Patos (`430000100000000`, `430000200000000`) vêm sem `CD_MUN`, distrito ou subdistrito; nas malhas de distritos e subdistritos as duas lagoas são uma feição sem código. → `cd_mun` sai do `cd_setor`; a feição sem código sai do staging; o `not_null` de distrito ignora as áreas operacionais.
+12. **Estatística logo após o build.** Logo depois do build, `lkp_municipio` ainda não tem estatísticas: dentro do `dbt build`, a métrica de divergência não terminou em 9 min; com `analyze` no post-hook dos marts, 41 s (a mesma consulta isolada leva 23 s). → todo mart roda `analyze` ao final.
 
 ## Pipeline
 
@@ -510,9 +513,11 @@ geo/
   Medido em 30/10/2026 (malha 2025, local): `reverse()` p95 4,5 ms; lote de 100 mil pontos em 2,8 s; `municipios()` de um código p95 5 ms; validação de MG (853) em 1,7 s. Tolerâncias mantidas: no RJ, 0,001° reduz o GeoJSON de 8,9 MB para 649 KB (desvio máx. 0,3 km) e 0,01° para 121 KB (3,2 km), sem fresta; a simplificação ingênua abre 90 arestas inválidas.
 
 **Fase 4 — Intramunicipal**
-- [ ] DAG do Censo 2022: setores, bairros, distritos e subdistritos
-- [ ] `lkp_setor` e `reverse()` completo
-- [ ] Métrica de divergência setores 2022 × malha vigente
+- [x] DAG do Censo 2022: setores, bairros, distritos e subdistritos
+- [x] `lkp_setor` e `reverse()` completo
+- [x] Métrica de divergência setores 2022 × malha vigente
+
+  Medido em 30/10/2026: carga das quatro camadas em ~1 min (setores: 468.099 em 35 s); `lkp_setor` com 879.109 pedaços; `reverse()` com setor, distrito e bairro p95 5,9 ms, lote de 100 mil em 7,2 s. Divergência: 208 setores (0,044%) caem em outro município na malha 2025 (191 na 2019), ex.: 10 setores de Nova Ubiratã/MT em `5101837 Boa Esperança do Norte`, criado depois do Censo. Martin publica `bairros` (zoom ≥ 10) e `distritos` (zoom ≥ 8).
 
 **Fase 5 — Observabilidade**
 - [ ] Prometheus, exporters e Grafana provisionado

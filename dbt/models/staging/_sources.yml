@@ -9,3 +9,8 @@ sources:
       - name: localidades_municipios
         description: API Localidades, um retrato JSONB por dia de coleta.
       - name: localidades_estados
+      - name: censo2022_setores
+        description: Setores censitários 2022, com a hierarquia intramunicipal (distrito, subdistrito, bairro).
+      - name: censo2022_bairros
+      - name: censo2022_distritos
+      - name: censo2022_subdistritos

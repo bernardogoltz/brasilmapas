@@ -29,9 +29,11 @@ def _modelos(manifest):
 
 def test_modelos_por_camada(manifest):
     esperado = {
-        "staging": {"stg_ibge__municipios", "stg_ibge__localidades_municipios", "stg_ibge__localidades_estados"},
+        "staging": {"stg_ibge__municipios", "stg_ibge__localidades_municipios", "stg_ibge__localidades_estados",
+                    "stg_ibge__setores_2022", "stg_ibge__bairros_2022", "stg_ibge__distritos_2022", "stg_ibge__subdistritos_2022"},
         "intermediate": {"int_municipios__geom_valida", "int_municipios__hierarquia", "int_municipios__simplificado"},
-        "marts": {"dim_municipio", "geo_municipio", "geo_uf", "lkp_municipio"},
+        "marts": {"dim_municipio", "geo_municipio", "geo_uf", "lkp_municipio", "geo_bairro", "geo_distrito", "lkp_setor"},
+        "obs": {"obs_setores_divergentes", "obs_divergencia_setores"},
         "meta": {"publicacao"},
     }
     modelos = _modelos(manifest)
@@ -51,6 +53,8 @@ def test_marts_tem_testes_de_chave_e_geometria(manifest):
     assert {"assert_contagem_municipios_api", "assert_cobertura_api_localidades"} <= por_modelo["dim_municipio"]
     assert "assert_simplificacao_nao_piora_cobertura" in por_modelo["geo_municipio"]
     assert {"geometria_valida", "srid", "assert_lkp_cobre_ponto_interno"} <= por_modelo["lkp_municipio"]
+    assert {"geometria_valida", "srid", "assert_lkp_setor_cobre_ponto_interno"} <= por_modelo["lkp_setor"]
+    assert {"unique", "not_null"} <= por_modelo["stg_ibge__bairros_2022"]
 
 
 def test_seed_areas_operacionais():
@@ -62,10 +66,10 @@ def test_assets_da_ingestao_disparam_o_dbt():
     def assets(arquivo):
         return set(re.findall(r'Asset\("([^"]+)"\)', (DAGS / arquivo).read_text()))
 
-    produzidos = assets("ibge_malha_municipal.py") | assets("ibge_localidades.py")
+    produzidos = assets("ibge_malha_municipal.py") | assets("ibge_localidades.py") | assets("ibge_censo2022_intramunicipal.py")
     dbt_dag = (DAGS / "dbt_geo.py").read_text()
-    assert assets("dbt_geo.py") == produzidos == {"raw.malha_municipal", "raw.localidades"}
-    assert "schedule=RAW_MALHA | RAW_LOCALIDADES" in dbt_dag
+    assert assets("dbt_geo.py") == produzidos == {"raw.malha_municipal", "raw.localidades", "raw.censo2022"}
+    assert "schedule=RAW_MALHA | RAW_LOCALIDADES | RAW_CENSO" in dbt_dag
 
 
 def test_localidades_atualiza_asset_uma_vez():

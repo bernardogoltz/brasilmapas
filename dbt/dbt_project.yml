@@ -24,6 +24,11 @@ models:
     marts:
       +schema: marts
       +materialized: table
+      # estatísticas logo após o build: sem elas o planner ignora o GiST nos laterais seguintes (obs, testes)
+      +post-hook: "analyze {{ this }}"
+    obs:
+      +schema: obs
+      +materialized: table
 
 seeds:
   geo:

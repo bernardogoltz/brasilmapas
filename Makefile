@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help up down status notebook test airflow dags-check carregar localidades dbt transformar tiles validar explorador simplificacao benchmark
+.PHONY: help up down status notebook test airflow dags-check carregar localidades censo dbt transformar tiles validar explorador simplificacao benchmark
 
 help: ## lista os comandos
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36mmake %-12s\033[0m %s\n", $$1, $$2}'
@@ -25,6 +25,9 @@ carregar: ## dispara a malha municipal; EDICAO=2019 para backfill
 
 localidades: ## dispara a coleta da API Localidades
 	$(COMPOSE) exec airflow-apiserver airflow dags trigger ibge_localidades
+
+censo: ## dispara o Censo 2022 intramunicipal (setores, bairros, distritos); FORCAR=1 recarrega
+	$(COMPOSE) exec airflow-apiserver airflow dags trigger ibge_censo2022_intramunicipal $(if $(FORCAR),-c '{"forcar": true}')
 
 dbt: ## dbt build local (staging → marts) contra o banco do compose
 	cd dbt && uv run dbt build --profiles-dir .

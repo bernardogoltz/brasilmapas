@@ -20,3 +20,19 @@ postgres:
       geometry_column: geom_media
       geometry_type: MULTIPOLYGON
       properties: {edicao: int4, cd_uf: text, sg_uf: text, nm_uf: text}
+    bairros:
+      schema: marts
+      table: geo_bairro
+      srid: 4674
+      geometry_column: geom
+      geometry_type: MULTIPOLYGON
+      minzoom: 10
+      properties: {cd_bairro: text, nm_bairro: text, cd_mun: text}
+    distritos:
+      schema: marts
+      table: geo_distrito
+      srid: 4674
+      geometry_column: geom
+      geometry_type: MULTIPOLYGON
+      minzoom: 8
+      properties: {cd_dist: text, nm_dist: text, cd_mun: text}

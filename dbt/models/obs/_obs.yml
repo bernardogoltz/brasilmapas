@@ -1,0 +1,10 @@
+version: 2
+
+models:
+  - name: obs_setores_divergentes
+    description: Setores 2022 cujo ponto interno cai em outro município (ou fora) na malha de cada edição.
+  - name: obs_divergencia_setores
+    description: "% de setores 2022 divergentes por edição da malha (métrica, não falha)."
+    columns:
+      - name: edicao
+        data_tests: [unique, not_null]
