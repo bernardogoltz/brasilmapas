@@ -11,9 +11,14 @@ Tudo passa pelo `make` (requer Docker e `uv`). `make` sozinho lista os comandos.
 | Comando | O que faz |
 |---|---|
 | `make up` | cria o `.env` se faltar, sobe os containers, espera ficarem saudáveis e mostra o status |
-| `make down` | para os containers (os dados ficam no volume) |
+| `make airflow` | sobe banco + Airflow (build da imagem; UI em `localhost:8080`) |
+| `make dags-check` | lista erros de import das DAGs, no container |
+| `make carregar` | dispara `ibge_malha_municipal`; `EDICAO=2019` para backfill |
+| `make localidades` | dispara `ibge_localidades` |
+| `make down` | para os containers de todos os profiles (os dados ficam no volume) |
 | `make status` | serviços: estado, porta, uptime, CPU e memória |
 | `make notebook` | abre `01_explorar_fontes.py` no marimo (baixa a malha da UF escolhida) |
+| `make test` | roda os testes em `tests/` (pytest) |
 
 ## Objetivo
 
@@ -461,10 +466,10 @@ geo/
 - [x] `pyproject.toml` (uv) e `01_explorar_fontes.py` com a malha de uma UF
 
 **Fase 1 — Ingestão**
-- [ ] Airflow no compose (LocalExecutor)
-- [ ] DAG `ibge_malha_municipal`: descoberta, download com checksum, validação, `ogr2ogr` → `raw`
-- [ ] `meta.cargas` e backfill das edições históricas
-- [ ] DAG `ibge_localidades`
+- [x] Airflow no compose (LocalExecutor)
+- [x] DAG `ibge_malha_municipal`: descoberta, download com checksum, validação, `ogr2ogr` → `raw`
+- [x] `meta.cargas` e backfill das edições históricas (edições com zip nacional; 2010, 2013 e 2014 só têm recorte por UF)
+- [x] DAG `ibge_localidades`
 
 **Fase 2 — Transformação**
 - [ ] dbt: staging e marts de município e UF

@@ -3,3 +3,7 @@ data/
 
 # Segredos locais
 .env
+
+# Python
+__pycache__/
+.pytest_cache/
