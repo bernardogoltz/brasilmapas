@@ -123,24 +123,22 @@ Sem o script, direto da lib (`geoibge.mapa()` devolve o GeoJSON da UF; o geopand
 import geopandas as gpd
 import matplotlib.pyplot as plt
 
-import geoibge
+from geoibge import mapa
 from geoibge.desenho import CORES, resolver
 
-codigos = ["3550308", "3518800", "431490"]  # SP, Guarulhos, Porto Alegre (6 ou 7 dígitos)
-pedidos = {resolver(c) for c in codigos}  # → 7 dígitos
-ufs = {c[:2]: c for c in pedidos}  # um código por UF basta para trazer a UF inteira
+codigos = {resolver(c) for c in ["3550308", "3518800", "431490"]}
+ufs = {c[:2]: c for c in codigos}.values()
 
-features = [f for c in ufs.values() for f in geoibge.mapa(c)["features"]]
-gdf = gpd.GeoDataFrame.from_features(features, crs="EPSG:4674")
-gdf["id"] = [f["id"] for f in features]
+features = [f for c in ufs for f in mapa(c)["features"]]
+gdf = gpd.GeoDataFrame.from_features(features, crs="EPSG:4674").assign(id=[f["id"] for f in features])
 
-fig, ax = plt.subplots(figsize=(6, 6))
-gdf[gdf.nivel == "municipio"].plot(ax=ax, color=CORES["fundo"], edgecolor=CORES["borda"], linewidth=0.3)
-gdf[gdf.id.isin(pedidos)].plot(ax=ax, color=CORES["destaque"])
-gdf[gdf.nivel == "uf"].boundary.plot(ax=ax, color=CORES["uf"], linewidth=0.8)
+ax = gdf.query("nivel == 'municipio'").plot(color=CORES["fundo"], edgecolor=CORES["borda"], linewidth=0.3,
+                                            figsize=(6, 6))
+gdf[gdf.id.isin(codigos)].plot(ax=ax, color=CORES["destaque"])
+gdf.query("nivel == 'uf'").boundary.plot(ax=ax, color=CORES["uf"], linewidth=0.8)
 ax.set_axis_off()
 ax.set_title("SP, Guarulhos e POA")
-fig.savefig("meus.svg", bbox_inches="tight")
+plt.savefig("meus.svg", bbox_inches="tight")
 ```
 
 <table>
