@@ -1,6 +1,6 @@
 # IBGE Dados Geográficos
 
-Projeto de estudo de engenharia de dados: um pipeline que ingere as malhas territoriais do IBGE, modela com **dbt**, orquestra com **Airflow**, explora com **marimo**, monitora com **Grafana** e entrega os dados numa **biblioteca Python** — tudo local com **Docker Compose**.
+Projeto de estudo de engenharia de dados: um pipeline que ingere as malhas territoriais do IBGE, modela com **dbt**, orquestra com **Airflow**, explora com **marimo**, monitora com **Grafana** e entrega os dados numa **biblioteca Python**, tudo local com **Docker Compose**.
 
 > **Status: fases 0 a 5 implementadas** (ingestão, dbt, `geoibge`, Martin, Censo 2022 intramunicipal e observabilidade com Grafana); pendentes: elementary e alertas. Caminhos, colunas e contagens das fontes foram conferidos direto no IBGE em 30/10/2026.
 
@@ -177,7 +177,7 @@ Todas públicas, do IBGE. Abreviação: `$GEOFTP` = `https://geoftp.ibge.gov.br/
 9. **Há polígonos gigantes.** Altamira/PA tem 159.533 km²: testar um ponto contra o polígono inteiro é caro. → `ST_Subdivide` (ver [Eficiência](#eficiência)).
 10. **A cobertura do IBGE não é perfeita.** A malha 2025 tem 19 arestas inválidas (`ST_CoverageInvalidEdges`, frestas e sobreposições entre vizinhos) e a união por UF sai inválida em AC, PI e CE. → teste de cobertura como aviso; a simplificação não pode piorar a contagem; a geometria da UF passa por `ST_MakeValid`.
 11. **As lagoas não têm distrito.** Nos setores 2022, os dois setores das lagoas Mirim e dos Patos (`430000100000000`, `430000200000000`) vêm sem `CD_MUN`, distrito ou subdistrito; nas malhas de distritos e subdistritos as duas lagoas são uma feição sem código. → `cd_mun` sai do `cd_setor`; a feição sem código sai do staging; o `not_null` de distrito ignora as áreas operacionais.
-12. **Estatística logo após o build.** Logo depois do build, `lkp_municipio` ainda não tem estatísticas: dentro do `dbt build`, a métrica de divergência não terminou em 9 min; com `analyze` no post-hook dos marts, 41 s (a mesma consulta isolada leva 23 s). → todo mart roda `analyze` ao final.
+12. **Tabela nova não tem estatísticas.** Logo depois do build, `lkp_municipio` ainda não tem estatísticas: dentro do `dbt build`, a métrica de divergência não terminou em 9 min; com `analyze` no post-hook dos marts, 41 s (a mesma consulta isolada leva 23 s). → todo mart roda `analyze` ao final.
 
 ## Pipeline
 
@@ -214,7 +214,7 @@ flowchart LR
 
 ### Ingestão (`raw`)
 
-O GDAL lê o shapefile de dentro do zip (`/vsizip/`), sem extrair. Com `/vsicurl/` (ou `/vsizip//vsicurl/` para zip) lê direto da URL, baixando só os trechos necessários — foi assim que as colunas e contagens acima foram conferidas.
+O GDAL lê o shapefile de dentro do zip (`/vsizip/`), sem extrair. Com `/vsicurl/` (ou `/vsizip//vsicurl/` para zip) lê direto da URL, baixando só os trechos necessários. Foi assim que as colunas e contagens acima foram conferidas.
 
 ```bash
 # esboço: uma tabela por camada, com a edição marcada em cada linha
@@ -381,7 +381,7 @@ left join lateral (
 ) s on true;
 ```
 
-- **Lote:** o mesmo SQL com `from unnest(:ids, :lons, :lats) as t(id, lon, lat)` no lugar do ponto único — uma ida ao banco para milhares de pontos.
+- **Lote:** o mesmo SQL com `from unnest(:ids, :lons, :lats) as t(id, lon, lat)` no lugar do ponto único: uma ida ao banco para milhares de pontos.
 - **Ponto na costa, fora da malha:** fallback para o município mais próximo (`order by geom <-> p.geom`) até 1 km, com aviso.
 - **Fora do Brasil:** linha com `erro="fora_do_brasil"` depois de um filtro barato pelo bbox nacional.
 
@@ -529,8 +529,9 @@ geo/
   Medido em 30/10/2026: carga das quatro camadas em ~1 min (setores: 468.099 em 35 s); `lkp_setor` com 879.109 pedaços; `reverse()` com setor, distrito e bairro p95 5,9 ms, lote de 100 mil em 7,2 s. Divergência: 208 setores (0,044%) caem em outro município na malha 2025 (191 na 2019), ex.: 10 setores de Nova Ubiratã/MT em `5101837 Boa Esperança do Norte`, criado depois do Censo. Martin publica `bairros` (zoom ≥ 10) e `distritos` (zoom ≥ 8).
 
 **Fase 5 — Observabilidade**
-- [ ] Prometheus, exporters e Grafana provisionado
-- [ ] Dashboards e alertas
+- [x] Prometheus, exporters e Grafana provisionado
+- [x] Dashboards Pipeline, Qualidade e Banco
+- [ ] Alertas e integração com elementary
 
 **Fase 6 — Extras**
 - [ ] PMTiles por edição no pipeline
