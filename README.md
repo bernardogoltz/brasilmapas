@@ -117,6 +117,32 @@ uv run scripts/plots.py 3550308 3518800 431490 -t "SP, Guarulhos e POA" -o meus.
 make plots CODS="2304400 2611606"   # grava data/mapas/plot.svg; sem CODS, regera a galeria abaixo
 ```
 
+Sem o script, direto da lib (`geoibge.mapa()` devolve o GeoJSON da UF; o geopandas pinta):
+
+```python
+import geopandas as gpd
+import matplotlib.pyplot as plt
+
+import geoibge
+from geoibge.desenho import CORES, resolver
+
+codigos = ["3550308", "3518800", "431490"]  # SP, Guarulhos, Porto Alegre (6 ou 7 dígitos)
+pedidos = {resolver(c) for c in codigos}  # → 7 dígitos
+ufs = {c[:2]: c for c in pedidos}  # um código por UF basta para trazer a UF inteira
+
+features = [f for c in ufs.values() for f in geoibge.mapa(c)["features"]]
+gdf = gpd.GeoDataFrame.from_features(features, crs="EPSG:4674")
+gdf["id"] = [f["id"] for f in features]
+
+fig, ax = plt.subplots(figsize=(6, 6))
+gdf[gdf.nivel == "municipio"].plot(ax=ax, color=CORES["fundo"], edgecolor=CORES["borda"], linewidth=0.3)
+gdf[gdf.id.isin(pedidos)].plot(ax=ax, color=CORES["destaque"])
+gdf[gdf.nivel == "uf"].boundary.plot(ax=ax, color=CORES["uf"], linewidth=0.8)
+ax.set_axis_off()
+ax.set_title("SP, Guarulhos e POA")
+fig.savefig("meus.svg", bbox_inches="tight")
+```
+
 <table>
 <tr>
 <td align="center"><img src="docs/img/plot_rmsp.svg" width="300"><br>8 municípios da Grande SP</td>

@@ -113,3 +113,13 @@ def test_main_recusa_saida_sem_codigos(tmp_path, capsys):
     with pytest.raises(SystemExit) as saida:
         pl.main(["-o", str(tmp_path / "x.svg")])
     assert saida.value.code == 2 and "pedem códigos" in capsys.readouterr().err
+
+
+def test_trecho_python_do_readme_roda_e_pinta_a_serie(tmp_path, monkeypatch):
+    readme = (Path(__file__).parents[1] / "README.md").read_text()
+    trecho = re.search(r"Sem o script, direto da lib.*?```python\n(.*?)```", readme, re.S).group(1)
+    monkeypatch.chdir(tmp_path)
+    exec(compile(trecho, "README.md", "exec"), {})
+    plt.close("all")
+    svg = (tmp_path / "meus.svg").read_text()
+    assert svg.startswith("<?xml") and "#d62728" in svg  # série pintada na cor de destaque
