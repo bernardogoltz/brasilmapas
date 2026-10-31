@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Stop hook: se houver mudança grande não commitada, pede ao Claude que commite.
 input=$(cat)
+[ -n "${AUTO_COMMIT_NESTED:-}" ] && exit 0
 [ "$(jq -r '.stop_hook_active // false' <<<"$input")" = "true" ] && exit 0
 cd "${CLAUDE_PROJECT_DIR:-.}" || exit 0
 git rev-parse --is-inside-work-tree >/dev/null 2>&1 || exit 0
@@ -19,5 +20,5 @@ fi
 
 [ "$lines" -lt "$MIN_LINES" ] && [ "$files" -lt "$MIN_FILES" ] && exit 0
 
-reason="Mudança grande não commitada ($files arquivos, ~$lines linhas). Antes de parar: revise com git status/git diff, faça git add dos arquivos relevantes (nunca segredos/.env) e commite. Mensagem: Conventional Commits em português — título <tipo>(escopo): resumo imperativo ≤72 caracteres; linha em branco; corpo curto explicando o porquê e o que mudou (bullets se houver várias partes). SEM linha Co-Authored-By. Se as mudanças forem de assuntos distintos, faça commits separados."
+reason="Mudança grande não commitada ($files arquivos, ~$lines linhas). Antes de parar: revise com git status, faça git add dos arquivos relevantes (nunca segredos/.env) e rode \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/ai-commit.sh — ele gera a mensagem com Sonnet 5.5 (effort low) e commita. Não escreva a mensagem você mesmo. Se houver assuntos distintos, faça add + ai-commit.sh separadamente para cada um."
 jq -n --arg r "$reason" '{decision:"block", reason:$r}'
