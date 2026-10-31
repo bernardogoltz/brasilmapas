@@ -24,6 +24,7 @@ Tudo passa pelo `make` (requer Docker e `uv`). `make` sozinho lista os comandos.
 | `make mapas-json` | regera `data/mapas.json` (paths SVG prontos de todas as UFs, para uso externo) a partir dos GeoJSON, sem banco |
 | `make mapa` | SVG da UF com o município em destaque, sem banco: `COD=3550308` ou `CEP=01310-100`; grava em `data/mapas/` |
 | `make exemplos` | regera os mapas e o print de tempos do README em `docs/img/` (banco gold × GeoJSON × `mapas.json`) |
+| `make plots` | pinta uma série de códigos IBGE num SVG do matplotlib, com o tempo de execução no título: `CODS="3550308 3518800"` (grava em `data/mapas/plot.svg`); sem `CODS`, regera a galeria em `docs/img/` |
 | `make explorador` | app `05_explorador.py`: UF → mapa, clique → `reverse()` |
 | `make simplificacao` | abre `02_simplificacao.py` (tolerância × tamanho × frestas) |
 | `make benchmark` | abre `03_benchmark_reverse.py` (latência e lote do `reverse()`) |
@@ -106,6 +107,23 @@ O mesmo desenho por três caminhos. No banco, uma consulta aos marts por pedido 
 | `5300108` | Brasília (DF) | 1 | 0,9 ms | 0,9 ms | 0,01 ms | < 0,01 ms |
 
 Mediana numa máquina local, malha 2025, conexão já aberta. O banco paga a consulta a cada pedido e devolve até 15× mais bytes; o GeoJSON paga só a 1ª leitura da UF; o `mapas.json` carrega todas as UFs uma vez (~15 ms) e cada desenho vira concatenação de strings. `make exemplos` regera as imagens e os tempos (precisa do banco no ar).
+
+### Série de códigos → matplotlib
+
+Vários municípios de uma vez, em qualquer UF: `scripts/plots.py` desenha as UFs que a série toca, pinta os códigos e grava o SVG do matplotlib. O título traz o tempo de execução (resolver os códigos, ler os GeoJSON e montar a figura; o `savefig` fica de fora). O fundo vira imagem dentro do SVG, para o Brasil inteiro não passar de 9 MB; a série e as divisas seguem em vetor.
+
+```sh
+uv run scripts/plots.py 3550308 3518800 431490 -t "SP, Guarulhos e POA" -o meus.svg
+make plots CODS="2304400 2611606"   # grava data/mapas/plot.svg; sem CODS, regera a galeria abaixo
+```
+
+<table>
+<tr>
+<td align="center"><img src="docs/img/plot_rmsp.svg" width="300"><br>8 municípios da Grande SP</td>
+<td align="center"><img src="docs/img/plot_nordeste.svg" width="300"><br>capitais do Nordeste (9 UFs)</td>
+<td align="center"><img src="docs/img/plot_capitais.svg" width="300"><br>27 capitais</td>
+</tr>
+</table>
 
 ## Objetivo
 
