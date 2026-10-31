@@ -20,6 +20,8 @@ Tudo passa pelo `make` (requer Docker e `uv`). `make` sozinho lista os comandos.
 | `make transformar` | dispara `dbt_geo` (Cosmos) no Airflow; também roda sozinha quando a ingestão atualiza um asset |
 | `make tiles` | sobe o Martin com municípios e UFs como vector tiles (`localhost:3001`) |
 | `make validar` | valida UFs e municípios com o `geoibge`; `IDS="SP 3550308"` |
+| `make mapas` | regera `src/geoibge/mapas/{cd_uf}.json` (GeoJSON por UF, simplificado na escala da UF) a partir dos marts |
+| `make mapa` | SVG da UF com o município em destaque, sem banco: `COD=3550308` ou `CEP=01310-100`; grava em `data/mapas/` |
 | `make explorador` | app `05_explorador.py`: UF → mapa, clique → `reverse()` |
 | `make simplificacao` | abre `02_simplificacao.py` (tolerância × tamanho × frestas) |
 | `make benchmark` | abre `03_benchmark_reverse.py` (latência e lote do `reverse()`) |
@@ -340,7 +342,29 @@ rel[~rel.ok]
 - **Entrada inválida não some:** código inexistente, nome ambíguo ou sigla errada vira `ValueError` listando os itens problemáticos (ou linha com `erro` se `erros="marcar"`).
 - **Validação rápida:** roda no banco, numa consulta só para a lista inteira (`unnest`), sem trazer geometria para o Python; `validar(..., cobertura=True)` acrescenta `ST_CoverageInvalidEdges` entre os itens.
 - Conexão por `GEOIBGE_DSN` (ou `gi.conectar(dsn)`); pool do `psycopg` e leitura com `geopandas.read_postgis`.
-- CLI fina para uso rápido: `uv run geoibge validar SP RJ 3550308`.
+- CLI fina para uso rápido: `uv run geoibge validar SP RJ 3550308`, `uv run geoibge mapa 3550308 -o sp.svg`.
+
+### Desenho da UF com o município em destaque (sem banco)
+
+A tarefa mais comum, código IBGE (ou CEP) → desenho da UF com o município marcado, não toca no banco: lê GeoJSON estático publicado em `src/geoibge/mapas/{cd_uf}.json` (27 arquivos, ~7,5 MB; MG, o maior, 770 KB). Os 2 primeiros dígitos do código dão a UF, então cada pedido abre um arquivo só.
+
+```python
+import geoibge as gi
+
+fc = gi.mapa(3550308)                # FeatureCollection da UF; o pedido vem com properties.destaque = true
+fc = gi.mapa(cep="01310-100")        # CEP → código pela ViaCEP (única parte com rede)
+s  = gi.svg("355030", largura=800)   # SVG pronto; código de 6 dígitos também vale
+```
+
+| | |
+|---|---|
+| Arquivo | FeatureCollection compacta, UTF-8: 1ª feição é o contorno da UF (`nivel: "uf"`), depois uma por município (`nivel: "municipio"`, ou `"area_operacional"` nas lagoas do RS), com `id` = código, `nome` e `ponto` (ponto interno, para rótulo/marcador). Topo: `edicao`, `sg_uf`, `nm_uf`, `bbox`, `tolerancia`, `partes_omitidas` |
+| Simplificação | `ST_CoverageSimplify` da malha média com tolerância da UF = lado maior / 1000 (≈ 1 px num desenho de 1000 px): DF e SE ficam detalhados, AM e PA não carregam vértice invisível. As divisas continuam encaixadas; casas decimais na medida da tolerância (3 ou 4) |
+| Ilhas remotas | parte de município a mais de 2° do continente da UF sai do desenho (só Trindade e Martim Vaz, de Vitória, listadas em `partes_omitidas`); município todo oceânico fica (Fernando de Noronha) |
+| Desempenho | `import geoibge` sem geopandas (imports preguiçosos); 1ª chamada da UF 5–40 ms (lê o JSON e projeta), seguintes < 0,5 ms (cache por UF) |
+| SVG | equirretangular no paralelo central; municípios num `path` só, destaque e contorno por cima; município pequeno demais para ver ganha um círculo |
+
+`make mapas` regera os arquivos depois de uma edição nova; `make mapa COD=3550308` (ou `CEP=…`) grava o SVG em `data/mapas/`. No GeoPandas: `gpd.GeoDataFrame.from_features(fc["features"], crs=4674)`.
 
 Resultado de `reverse()` para um ponto (colunas do DataFrame, mostradas como dict):
 
@@ -488,6 +512,7 @@ geo/
 │   ├── macros/                   # testes genéricos espaciais
 │   └── models/{staging,intermediate,marts}/
 ├── src/geoibge/                  # biblioteca e CLI
+│   └── mapas/                    # GeoJSON por UF para o desenho (make mapas)
 ├── tests/
 ├── tiles/martin.yaml
 ├── notebooks/

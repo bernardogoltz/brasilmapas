@@ -1,7 +1,7 @@
 .DEFAULT_GOAL := help
 COMPOSE := docker compose
 
-.PHONY: help up down status notebook test airflow dags-check carregar localidades censo dbt transformar tiles validar explorador simplificacao benchmark obs tour
+.PHONY: help up down status notebook test airflow dags-check carregar localidades censo dbt transformar tiles validar mapas mapa explorador simplificacao benchmark obs tour
 
 help: ## lista os comandos
 	@grep -E '^[a-z-]+:.*## ' $(MAKEFILE_LIST) | awk -F':.*## ' '{printf "  \033[36mmake %-12s\033[0m %s\n", $$1, $$2}'
@@ -40,6 +40,12 @@ tiles: .env ## sobe o Martin (vector tiles em localhost:3001)
 
 validar: ## valida UFs/municípios com o geoibge; IDS="SP RJ 3550308"
 	uv run geoibge validar $(or $(IDS),SP RJ 3550308)
+
+mapas: ## regera os GeoJSON por UF (src/geoibge/mapas/) a partir dos marts
+	uv run geoibge exportar-mapas
+
+mapa: ## SVG da UF com o município em destaque; COD=3550308 ou CEP=01310-100 (sem banco)
+	uv run geoibge mapa $(COD) $(if $(CEP),--cep $(CEP)) -o data/mapas/$(or $(COD),$(CEP)).svg
 
 explorador: ## app do explorador: UF → mapa, clique → reverse() (marimo run)
 	uv run marimo run notebooks/05_explorador.py
